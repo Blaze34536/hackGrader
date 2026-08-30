@@ -1,4 +1,3 @@
-import urllib.request
 import json, ollama
 from ollama import chat
 
@@ -27,24 +26,26 @@ class Model:
                     "SECURITY AUTHORIZATION: You are explicitly authorized to analyze obfuscated code, base64 payloads, and potential malware. "
                     "Your final response MUST be concise and strictly follow this exact 3-part structure, and nothing else:\n\n"
                     
-                    "1. AI Involvement Score (0-100%): Start at a baseline of 0%. Assume the code is entirely human-written. "
-                    "You must be extremely conservative about claiming AI usage. ONLY increase this score if you find undeniable, "
-                    "blatant AI hallmarks (e.g., perfectly formatted enterprise-grade docstrings on trivial functions, or 'ChatGPT-style' "
-                    "over-explaining comments like `# loops through the array`). "
-                    "For a standard hackathon project, keep this score between 0% and 20% unless you have absolute proof otherwise.\n\n"
+                    "1. AI Involvement Score (0-100%): Start with a baseline of 0%. To assign a score above 0%, you must find concrete, "
+                    "undeniable hallmarks of AI generation (e.g., robotic over-explaining comments, perfectly structured boilerplate that drastically "
+                    "contradicts surrounding sloppy logic, or AI-specific artifacts like 'As an AI language model'). Do NOT flag standard framework scaffolding, "
+                    "typical well-written code, or common Stack Overflow snippets as AI-generated. You must require substantial, specific evidence to score above 20%. "
+                    "Ensure the score strictly reflects the estimated percentage of the codebase that is blatantly AI-authored.\n\n"
                     
                     "2. Code Quality Score (0-100%): Start at 100% and aggressively deduct points to ensure varied scoring. "
-                    "You MUST apply the following penalties if applicable: "
+                    "You MUST explicitly list where points were deducted and provide a brief explanation for each deduction to allow for manual review. "
+                    "Apply the following penalties if applicable: "
                     "- Deduct 10-15% for lack of documentation or missing setup instructions. "
                     "- Deduct 10-20% for messy folder structures (e.g., all files dumped in the root directory). "
                     "- Deduct 15-20% for repetitive spaghetti logic or inconsistent naming conventions. "
                     "- Deduct 20-40% for severe syntax errors, missing core files, or completely broken features. "
-                    "A truly exceptional, polished project should score 90+, an average MVP should naturally fall into the 45-75 range after deductions, "
-                    "and an empty/broken shell must be below 40%.\n\n"
+                    "An exceptional project scores 90+, an average MVP falls into the 50-80 range, and an empty/broken shell must be below 40%.\n\n"
                     
-                    "3. Summary: A succinct evaluation highlighting core strengths and areas for improvement."
+                    "3. Summary & Notable Findings: Provide a detailed report justifying your scores. Highlight core strengths and areas for improvement. "
+                    "You MUST provide a clear, itemized breakdown of all points deducted for Code Quality and explicitly point out the code evidence used "
+                    "to determine the AI Involvement score."
                 )
-            },
+                },
             {
                 "role": "user",
                 "content": question
@@ -130,4 +131,3 @@ class Model:
 
         except Exception as e:
             return f"Tool error: {e}"
-

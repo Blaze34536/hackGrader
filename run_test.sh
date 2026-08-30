@@ -2,7 +2,7 @@
 
 if ! command -v uv &> /dev/null; then
   if [ $# -eq 0 ]; then
-    uv run pytest -sv tests/test_pipeline.py > log.txt
+    uv run pytest -sv tests/test_pipeline.py 
     exit 0
   fi
 
@@ -22,7 +22,7 @@ if ! command -v uv &> /dev/null; then
   done
 else
   if [ $# -eq 0 ]; then
-    python tests/test_pipeline.py > log.txt
+    python tests/test_pipeline.py 
     exit 0
   fi
 

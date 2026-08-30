@@ -1,7 +1,7 @@
 import unittest
 
-from tests.tools.stats import benchmark_timing, benchmark_stats
-from imports import Driver, Crawler
+from .tools.stats import benchmark_timing, benchmark_stats
+from .imports import Driver, Crawler
 
 class TestCrawling(unittest.TestCase):
     @benchmark_stats

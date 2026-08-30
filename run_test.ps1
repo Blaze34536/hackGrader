@@ -7,9 +7,9 @@ $hasUv = [bool](Get-Command "uv" -ErrorAction SilentlyContinue)
 
 if (-not $c -and -not $s) {
   if ($hasUv) {
-    uv run pytest -sv tests/test_pipeline.py > log.txt
+    uv run pytest -sv tests/test_pipeline.py 
   } else {
-    python tests/test_pipeline.py > log.txt
+    python tests/test_pipeline.py 
   }
   exit
 }
