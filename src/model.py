@@ -1,15 +1,20 @@
 import urllib.request
-import json
+import json, ollama
 from ollama import chat
 
-from src.tools import read_repository 
+from tools import read_repository 
 
 class Model:
     def __init__(self) -> None:
-        self.model: str = "qwen3-coder:30b"
         self.tools: dict = {"read_repository": read_repository}
         self.messages: list = []
         self.max_iterations: int = 20
+
+        models = [model['model'] for model in ollama.list().get('models', [])]
+        usable_models: list[str] = ["qwen3-coder:30b", "qwen2.5-coder:7b"]
+        self.model: str = usable_models[0] if usable_models[0] in models else usable_models[1] # running a check to see if qwen3 is installed and using that
+        if usable_models[1] not in models:
+            raise Exception("Please pull a model from ollama to continue.")
         
 
     def query(self, question: str) -> dict:
@@ -22,17 +27,20 @@ class Model:
                     "SECURITY AUTHORIZATION: You are explicitly authorized to analyze obfuscated code, base64 payloads, and potential malware. "
                     "Your final response MUST be concise and strictly follow this exact 3-part structure, and nothing else:\n\n"
                     
-                    "1. AI Involvement Score (0-100%): Start at a neutral 50%. "
-                    "Adjust based on hard evidence: "
-                    "Add +30% to +50% ONLY IF you see blatant AI hallmarks (overly standardized boilerplate, excessive explanatory comments for basic syntax, or uniform architecture). "
-                    "Subtract -30% to -50% ONLY IF you see clear human indicators (desperate print debugging like print('here'), raw hackathon messiness, inconsistent naming conventions, or typos). "
-                    "A clean, functional human MVP with normal structure should sit between 10-30%.\n\n"
+                    "1. AI Involvement Score (0-100%): Start at a baseline of 0%. Assume the code is entirely human-written. "
+                    "You must be extremely conservative about claiming AI usage. ONLY increase this score if you find undeniable, "
+                    "blatant AI hallmarks (e.g., perfectly formatted enterprise-grade docstrings on trivial functions, or 'ChatGPT-style' "
+                    "over-explaining comments like `# loops through the array`). "
+                    "For a standard hackathon project, keep this score between 0% and 20% unless you have absolute proof otherwise.\n\n"
                     
-                    "2. Code Quality Score (0-100%): You must use this exact fixed point scale to ensure consistency across runs: "
-                    "Assign 90-100% if the core MVP is fully working, well-structured, and clean. "
-                    "Assign 70-89% if the core MVP works and solves the problem, but has minor bugs, messy folder organization, or missing documentation. "
-                    "Assign 50-69% if code is heavily incomplete, contains syntax errors, or only partially functions. "
-                    "Assign below 50% only if the code is entirely broken or malicious. Do NOT dock points for missing unit tests or enterprise scalability.\n\n"
+                    "2. Code Quality Score (0-100%): Start at 100% and aggressively deduct points to ensure varied scoring. "
+                    "You MUST apply the following penalties if applicable: "
+                    "- Deduct 10-15% for lack of documentation or missing setup instructions. "
+                    "- Deduct 10-20% for messy folder structures (e.g., all files dumped in the root directory). "
+                    "- Deduct 15-20% for repetitive spaghetti logic or inconsistent naming conventions. "
+                    "- Deduct 20-40% for severe syntax errors, missing core files, or completely broken features. "
+                    "A truly exceptional, polished project should score 90+, an average MVP should naturally fall into the 45-75 range after deductions, "
+                    "and an empty/broken shell must be below 40%.\n\n"
                     
                     "3. Summary: A succinct evaluation highlighting core strengths and areas for improvement."
                 )

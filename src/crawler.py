@@ -1,7 +1,7 @@
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 
-from src import driver
+import driver
 
 class Crawler:
     def __init__(self, link: str) -> None:
@@ -15,16 +15,20 @@ class Crawler:
         next_page: bool = True
         primary_driver = webdriver.driver
 
-        while (next_page):
+        while next_page:
             webdriver.connectUrl(self.gallery_url + f"?page={index}")
+            assert primary_driver is not None
             elements = primary_driver.find_elements(By.CLASS_NAME, "link-to-software")
+            page_hrefs = [elem.get_attribute('href') for elem in elements]
 
-            if len(elements) == 0:
+            if not page_hrefs or all(href in projects for href in page_hrefs):
                 next_page = False
             else:
-                projects += [elem.get_attribute('href') for elem in elements]
-            index += 1
-        
+                for href in page_hrefs:
+                    if href not in projects:
+                        projects.append(href)
+            index += 1 
+
         return projects
 
     def crawl_project(self, project_url: str, webdriver: driver.Driver) -> str:
@@ -32,6 +36,7 @@ class Crawler:
         primary_driver = webdriver.driver
 
         try:
+            assert primary_driver is not None
             element = primary_driver.find_element(By.CSS_SELECTOR, "ul[data-role='software-urls'] a")
             url = element.get_attribute("href")
             return str(url)

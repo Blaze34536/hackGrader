@@ -14,7 +14,7 @@ Hackathon devpost webscraper and code grader/checker pipeline. This aims to chec
 
 ---
 
-The project spins up and hosts a model locally for the analysis phase. Ensure that you have [ollama](https://ollama.com/) installed as well as the [qwen2.5-coder](https://ollama.com/library/qwen2.5-coder) model pulled. Additionally, you will need either [uv](https://github.com/astral-sh/uv) or pip to install packages for the scraper. The code is built around [python](https://www.python.org/) versions ```>=3.14```.
+The project spins up and hosts a model locally for the analysis phase. Ensure that you have [ollama](https://ollama.com/) installed as well as a [qwen coder](https://ollama.com/search?q=qwen+coder) model pulled. Additionally, you will need either [uv](https://github.com/astral-sh/uv) or pip to install packages for the scraper. The code is built around [python](https://www.python.org/) versions ```>=3.14```.
 
 ### Installation
 
@@ -30,10 +30,14 @@ git clone https://github.com/Google-Developers-Student-Club-LSU/HackGrader.git
 cd hackGrader
 ```
 
-Install the qwen2.5-coder model
+Install a qwen coder model
 
 ```bash
+# pull in the qwen 2.5, 7b parameter model
 ollama pull qwen2.5-coder:7b
+
+# pull in the qwen 3, 30b parameter model
+ollama pull qwen3-coder:30b
 ```
 
 #### Python pip
@@ -93,7 +97,7 @@ Run the pipeline with and pass in a devpost url as an argument for the script.
 python src/hackGrader/__init__.py https://example.devpost.com
 
 # uv run
-uv run https://example.devpost.com
+uv run hackgrader https://example.devpost.com
 ```
 
 ### Testing
