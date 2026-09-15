@@ -90,7 +90,7 @@ uv sync
 
 ---
 
-Run the pipeline with and pass in a devpost url as an argument for the script.
+Run the pipeline with and pass in a devpost url as an argument for the script
 
 ```bash
 # standard run
