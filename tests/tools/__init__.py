@@ -1,2 +1,2 @@
 class __init__:
-  pass
+    pass

@@ -1,7 +1,8 @@
 import unittest
 
-from .tools.stats import benchmark_timing, benchmark_stats
-from .imports import Driver, Crawler
+from .imports import Crawler, Driver
+from .tools.stats import benchmark_stats, benchmark_timing
+
 
 class TestCrawling(unittest.TestCase):
     @benchmark_stats
@@ -15,6 +16,7 @@ class TestCrawling(unittest.TestCase):
         github: list = crawl.get_github_projects(urls, driver)
 
         self.assertEqual(len(github) > 0, True, "Query failure")
+
 
 if __name__ == "__main__":
     unittest.main()

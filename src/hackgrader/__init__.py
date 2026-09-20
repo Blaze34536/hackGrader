@@ -1,11 +1,12 @@
-import sys
 import json
-from urllib.parse import urlparse  
+import sys
+from urllib.parse import urlparse
 
 from crawler import Crawler
 from driver import Driver
 from model import Model
 from reporting import Reporting
+
 
 def main() -> None:
     reporter: Reporting = Reporting()
@@ -26,25 +27,26 @@ def main() -> None:
     for project in github_projects:
         if not project:
             continue
-        
+
         print(f"project: {project}\n")
-        
+
         parsed_url = urlparse(project)
-        path_parts = [p for p in parsed_url.path.split('/') if p]
-        
+        path_parts = [p for p in parsed_url.path.split("/") if p]
+
         if len(path_parts) >= 1:
-            owner = path_parts[0]  
+            owner = path_parts[0]
             print(f"grading: {owner}\n")
-            
+
             result = individual_query(project, grader)
-            
+
             all_scores[owner] = result
-            
-            with open("scores.json", 'w', encoding="utf-8") as file:
+
+            with open("scores.json", "w", encoding="utf-8") as file:
                 json.dump(all_scores, file, ensure_ascii=False, indent=4)
 
     reporter.generate_report()
-    
+
+
 def individual_query(url: str, grader: Model) -> dict:
     question: str = (
         f"Please review the hackathon repository at the following URL: {url}. "
@@ -53,6 +55,7 @@ def individual_query(url: str, grader: Model) -> dict:
     )
     answer = grader.query(question)
     return answer
+
 
 if __name__ == "__main__":
     main()

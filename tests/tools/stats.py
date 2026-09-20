@@ -1,5 +1,10 @@
-from typing import Callable
-import time, platform, psutil, GPUtil
+import platform
+import time
+from collections.abc import Callable
+
+import GPUtil
+import psutil
+
 
 def benchmark_timing[**P, R](func: Callable[P, R]) -> Callable[P, R]:
     def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
@@ -11,8 +16,8 @@ def benchmark_timing[**P, R](func: Callable[P, R]) -> Callable[P, R]:
         post_print()
         print(f"Total execution time: {total_time:.4f} seconds")
         post_print()
-        return result 
-        
+        return result
+
     return wrapper
 
 
@@ -30,8 +35,10 @@ def benchmark_stats[**P, R](func: Callable[P, R]) -> Callable[P, R]:
 
     return wrapper
 
+
 def post_print() -> None:
     print("\n----------------------------------------------------------------------\n")
+
 
 class BlankGPU:
     def __init__(self) -> None:
