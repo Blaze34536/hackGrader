@@ -58,7 +58,7 @@ share/python-wheels/
 !.env.example
 
 # IDEs & Code Editors
-.vscode/*
+.vscode/
 !.vscode/settings.json
 !.vscode/tasks.json
 !.vscode/launch.json
@@ -82,6 +82,3 @@ htmlcov/
 
 # misc.
 scores.json
-
-# vs code
-*/.vscode

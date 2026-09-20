@@ -14,7 +14,7 @@ Hackathon devpost webscraper and code grader/checker pipeline. This aims to chec
 
 ---
 
-The project spins up and hosts a model locally for the analysis phase. Ensure that you have [ollama](https://ollama.com/) installed as well as a [qwen coder](https://ollama.com/search?q=qwen+coder) model pulled. Additionally, you will need either [uv](https://github.com/astral-sh/uv) or pip to install packages for the scraper. The code is built around [python](https://www.python.org/) versions ```>=3.14```.
+The project spins up and hosts a model locally for the analysis phase. HackGrader uses a custom model trained off AI generated code to better predict such code in given hackathon repositories. Although the project primarily uses the model, it will work with a base [qwen coder](https://ollama.com/search?q=qwen+coder) model. [ollama](https://ollama.com/), regardless, is a necessary requirement. Additionally, you will need either [uv](https://github.com/astral-sh/uv) or pip to install packages for the scraper. The core hackGrader code is built around [python](https://www.python.org/) versions ```>=3.14```, while the model code works on python version ```3.12```.
 
 ### Installation
 
@@ -30,7 +30,7 @@ git clone https://github.com/Google-Developers-Student-Club-LSU/HackGrader.git
 cd hackGrader
 ```
 
-Install a qwen coder model
+Follow steps in [model.md](model/README.md) or Install a qwen coder model
 
 ```bash
 # pull in the qwen 2.5, 7b parameter model
@@ -116,4 +116,14 @@ If no flags are provided, then the entire pipeline will be tested.
 ```bash
 # example script execution
 ./run_test -c
+```
+
+### Generating a Report
+
+---
+
+A PDF report can be generated once the core scoring pipeline has completed and output a .json file.
+
+```sh
+uv run src/format.py
 ```
