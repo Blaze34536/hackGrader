@@ -1,6 +1,8 @@
 [project]
 name = "qwen-ai-detector"
 version = "0.1.0"
+license = "MIT"
+authors = [{ name = "Quentin Bordelon" }]
 requires-python = "==3.12.*"
 dependencies = [
     "torch",
@@ -20,6 +22,9 @@ dependencies = [
     "tiktoken>=0.14.0",
 ]
 
+[dependency-groups]
+dev = ["ruff>=0.16.9,<0.17", "pytest>=9.1.1"]
+
 [[tool.uv.index]]
 name = "pytorch-cu128"
 url = "https://download.pytorch.org/whl/cu128"
@@ -33,3 +38,32 @@ torchvision = { index = "pytorch-cu128" }
 override-dependencies = [
     "xformers; sys_platform == 'never'"
 ]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+per-file-target-version = { "src/**/*.py" = "py312", "../src/**/*.py" = "py314" }
+src = ["src", "../src"]
+extend-exclude = ["llama.cpp"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "W", "I", "UP", "B", "BLE", "SIM", "D", "RUF"]
+ignore = ["D203", "D213"]
+
+[tool.ruff.lint.isort]
+known-first-party = [
+    "contracts",
+    "data",
+    "detection",
+    "learning",
+    "repositories",
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
+docstring-code-format = true

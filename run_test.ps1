@@ -1,31 +1,32 @@
+[CmdletBinding()]
 param (
-  [switch]$c,
-  [switch]$s
+  [ValidateSet("offline", "live", "all")]
+  [string]$Mode = "offline"
 )
 
-$hasUv = [bool](Get-Command "uv" -ErrorAction SilentlyContinue)
+$ErrorActionPreference = "Stop"
+Set-Location $PSScriptRoot
 
-if (-not $c -and -not $s) {
-  if ($hasUv) {
-    uv run pytest -sv tests/test_pipeline.py 
+function Invoke-AppTests {
+  param ([string[]]$PytestArgs)
+  if (Get-Command "uv" -ErrorAction SilentlyContinue) {
+    & uv run --project $PSScriptRoot --group dev pytest @PytestArgs
   } else {
-    python tests/test_pipeline.py 
+    & python -m pytest @PytestArgs
   }
-  exit
+  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
-if ($c) {
-  if ($hasUv) {
-    uv run pytest -sv tests/test_crawling.py
-  } else {
-    python tests/test_crawling.py
+# Which tests run is configured once in pyproject.toml: testpaths keeps collection inside
+# tests/, and addopts deselects the live ones. This wrapper therefore only selects a mode.
+switch ($Mode) {
+  "offline" {
+    Invoke-AppTests @("-q")
   }
-} 
-
-if ($s) {
-  if ($hasUv) {
-    uv run pytest -sv tests/test_scoring.py
-  } else {
-    python tests/test_scoring.py
+  "live" {
+    Invoke-AppTests @("-sv", "-m", "live")
+  }
+  "all" {
+    Invoke-AppTests @("--override-ini", "addopts=-q")
   }
 }

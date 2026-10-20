@@ -1,0 +1,23 @@
+# Human-class candidates: every repository in reports/human_bias.jsonl, whose last push
+# predates 2023-01-01 (19 of 20 before 2022). The harvester re-verifies each one against
+# its own pushed_at, its newest commit, and the agent list rather than trusting this file.
+https://github.com/Experience-Monks/devtool
+https://github.com/antirez/smaz
+https://github.com/chrisdickinson/beefy
+https://github.com/fatih/structs
+https://github.com/fogleman/ln
+https://github.com/geuis/helium-css
+https://github.com/harthur/brain
+https://github.com/jakogut/tinyvm
+https://github.com/nryoung/algorithms
+https://github.com/petruisfan/node-supervisor
+https://github.com/pksunkara/alpaca
+https://github.com/rxi/map
+https://github.com/rxi/vec
+https://github.com/stefanesser/dumpdecrypted
+https://github.com/subprotocol/verlet-js
+https://github.com/tckmn/mkcast
+https://github.com/tj/co
+https://github.com/vmg/sundown
+https://github.com/xoreaxeaxeax/rosenbridge
+https://github.com/zeman/perfmap

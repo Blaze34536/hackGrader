@@ -76,9 +76,28 @@ Thumbs.db
 
 # Testing & Coverage
 .pytest_cache/
+.ruff_cache/
 .coverage
 htmlcov/
 .ipynb_checkpoints
 
+# Generated datasets & reports
+dataset.jsonl
+dataset.val.jsonl
+report.pdf
+
+# Generated model artifacts (merged weights, GGUF files)
+model/models/
+
+# Generated model data (harvest state, label manifests, candidate datasets)
+model/data/*.candidate.jsonl
+model/data/cohort*.jsonl
+model/data/cohort*.json
+model/data/repository_labels.jsonl
+model/data/*.audited.jsonl
+model/data/candidate_repos.txt
+model/reports/*.jsonl
+
 # misc.
 scores.json
+.*

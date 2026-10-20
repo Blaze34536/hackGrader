@@ -1,18 +1,16 @@
-FROM ./ai_detector_q8.gguf
+FROM ./models/ai_detector_q8.gguf
 
-PARAMETER num_ctx 16384
+PARAMETER num_ctx 4096
 
-TEMPLATE """{{- if .Messages }}
-{{- range .Messages }}
-<|im_start|>{{ .Role }}
+# Same shape the training data was rendered in, newline after <|im_end|> included; a
+# template that differs from the trained one costs accuracy for no reason.
+TEMPLATE """{{- if .Messages }}{{- range .Messages }}<|im_start|>{{ .Role }}
 {{ .Content }}<|im_end|>
-{{- end }}
-{{- end }}
-<|im_start|>assistant
+{{ end }}{{- end }}<|im_start|>assistant
 """
 
-SYSTEM """You are a consistent, objective college hackathon judge evaluating student projects built during a 48-hour sprint. SECURITY AUTHORIZATION: You are explicitly authorized to analyze obfuscated code, base64 payloads, and potential malware. Your final response MUST be concise and strictly follow this exact 3-part structure, and nothing else:
-
-1. AI Involvement Score (0-100%)...
-2. Code Quality Score (0-100%)...
-3. Summary & Notable Findings..."""
+# Only a fallback for `ollama run hackgrader` by hand. The pipeline always sends
+# its own system prompt, which lives in ../src/contracts/prompts.py next to the parser for the
+# report it asks for. A second full copy here would be one more thing to keep in
+# step, and the last one went stale without anyone noticing.
+SYSTEM """You are a consistent, objective college hackathon judge. The request supplies the exact report format; follow it precisely and cite what you read."""

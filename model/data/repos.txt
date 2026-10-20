@@ -1,0 +1,55 @@
+# Hand-written repositories, one URL per line, for `uv run src/cli.py data -r repos.txt`.
+#
+# These rows teach the contrast snippets cannot: dense, consistent, documented code a
+# person wrote. Each score below is what the detector under `src/detection/` returns for
+# it today, and every one lands under the 40% flagging threshold. Re-read the detector's
+# line in the build output as you add more; repositories accumulate agent-written files
+# over time, and the score is recomputed from the full dump on every build.
+#
+# A `#` starts a comment, on its own line or after a URL.
+
+# --- Python ------------------------------------------------------
+https://github.com/psf/requests                          # 34%
+https://github.com/pallets/flask                         # 21%
+https://github.com/pytest-dev/pytest                     # 16%
+
+# --- JavaScript --------------------------------------------------
+https://github.com/expressjs/express                     # 24%
+https://github.com/lodash/lodash                         # 36%
+https://github.com/eslint/eslint                         # 39%
+
+# --- TypeScript --------------------------------------------------
+https://github.com/axios/axios                           # 8%
+
+# --- Java --------------------------------------------------------
+https://github.com/google/gson                           # 37%
+
+# --- C# ----------------------------------------------------------
+https://github.com/JamesNK/Newtonsoft.Json               # 20%
+
+# --- Dart --------------------------------------------------------
+https://github.com/dart-lang/shelf                       # 20%
+https://github.com/dart-lang/http                        # 19%
+
+# --- Swift -------------------------------------------------------
+https://github.com/Alamofire/Alamofire                   # 37%
+
+# --- Kotlin ------------------------------------------------------
+https://github.com/ktorio/ktor                           # 37%
+
+# --- Rust --------------------------------------------------------
+https://github.com/BurntSushi/ripgrep                    # 30%
+
+# --- Go ----------------------------------------------------------
+https://github.com/gin-gonic/gin                         # 35%
+https://github.com/spf13/cobra                           # 32%
+
+# --- C -----------------------------------------------------------
+https://github.com/antirez/sds                           # 22%
+https://github.com/htop-dev/htop                         # 16%
+
+# --- C++ ---------------------------------------------------------
+https://github.com/fmtlib/fmt                            # 20%
+
+# --- Jai (unusual syntax, no tests, no README - a useful oddity) -
+https://github.com/rexim/aoc-2023                        # 0%

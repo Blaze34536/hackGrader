@@ -1,0 +1,87 @@
+# Fresh real-repository sources for a future isolated data build.
+# Selected 2026-10-06; none of these URLs occur in repos.txt or in the earlier candidate
+# pool built from it (dataset.candidate.jsonl).
+# One public GitHub repository URL per line; the builder assigns source-disjoint splits.
+# Fresh here means new relative to this checkout's recorded source URLs, not guaranteed
+# unseen by a pretrained base model. Generated target labels are heuristic, not verified
+# authorship labels. Review candidate rows and confirm split coverage before training.
+
+# Python
+https://github.com/encode/httpx
+https://github.com/django/django
+https://github.com/pydantic/pydantic
+https://github.com/psf/black
+https://github.com/astral-sh/ruff
+
+# JavaScript and TypeScript
+https://github.com/vuejs/core
+https://github.com/sveltejs/svelte
+https://github.com/vitejs/vite
+https://github.com/angular/angular
+https://github.com/denoland/deno
+
+# Go
+https://github.com/golang/go
+https://github.com/prometheus/prometheus
+https://github.com/hashicorp/terraform
+https://github.com/etcd-io/etcd
+
+# Rust
+https://github.com/tokio-rs/tokio
+https://github.com/serde-rs/serde
+https://github.com/clap-rs/clap
+https://github.com/nushell/nushell
+
+# Java
+https://github.com/spring-projects/spring-boot
+https://github.com/junit-team/junit-framework
+https://github.com/google/guava
+https://github.com/elastic/elasticsearch
+
+# C#
+https://github.com/dotnet/runtime
+https://github.com/dotnet/aspnetcore
+https://github.com/serilog/serilog
+
+# Ruby
+https://github.com/rails/rails
+https://github.com/rubocop/rubocop
+https://github.com/jekyll/jekyll
+
+# PHP
+https://github.com/laravel/framework
+https://github.com/symfony/symfony
+https://github.com/composer/composer
+
+# C++
+https://github.com/nlohmann/json
+https://github.com/catchorg/Catch2
+https://github.com/google/googletest
+
+# C
+https://github.com/redis/redis
+https://github.com/curl/curl
+https://github.com/nginx/nginx
+
+# Swift
+https://github.com/swiftlang/swift
+https://github.com/vapor/vapor
+
+# Dart
+https://github.com/flutter/flutter
+https://github.com/dart-lang/sdk
+
+# Kotlin
+https://github.com/JetBrains/kotlin
+https://github.com/lysine-dev/okio
+
+# Repositories whose READMEs explicitly declare AI-generated authorship.
+https://github.com/rustic-ai/codeprism
+https://github.com/ovidiuiliescu/EpubWebReader
+https://github.com/stardustai/dataset-viewer
+https://github.com/a-side-project/ASCII-Motion
+https://github.com/gkeyes/MarkdownViewUltra
+https://github.com/basiphobe/sci-assist
+https://github.com/Mgrdich/TermChess
+https://github.com/williamokano/hashicorp-plugin-example
+https://github.com/vrescobar/chatgpt-python-elm
