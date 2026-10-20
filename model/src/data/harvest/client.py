@@ -21,6 +21,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Callable
+from datetime import UTC
+from email.utils import parsedate_to_datetime
 from typing import Any
 
 from .budget import RequestBudget
@@ -29,6 +31,10 @@ API_ROOT = "https://api.github.com"
 RAW_ROOT = "https://raw.githubusercontent.com"
 USER_AGENT = "HackGrader/0.1"
 MAX_ATTEMPTS = 3
+# Rate limits get their own allowance: a secondary limit is a pause, not a broken request.
+MAX_RATE_LIMIT_ATTEMPTS = 5
+# A wait this long is not absorbed mid-request; the pass stops and the caller decides.
+MAX_INLINE_WAIT = 120.0
 
 # (status, headers, payload). The payload is parsed JSON when the response was JSON.
 FetchResult = tuple[int, dict[str, str], Any]
@@ -37,6 +43,15 @@ Fetcher = Callable[[str], FetchResult]
 
 class GithubError(RuntimeError):
     """Raised when GitHub rejects a request for a reason retrying cannot fix."""
+
+
+class RateLimited(GithubError):
+    """Raised when GitHub asks for a pause longer than the client absorbs inline."""
+
+    def __init__(self, url: str, retry_after: float) -> None:
+        """Record the request and the pause that would let it succeed."""
+        self.retry_after = retry_after
+        super().__init__(f"GitHub rate limited {url}; retry after {retry_after:.0f}s")
 
 
 def github_token() -> str | None:
@@ -79,18 +94,58 @@ def urllib_fetch(url: str, *, token: str | None = None, timeout: float = 25.0) -
         return status, received, text
 
 
-def _wait_seconds(headers: dict[str, str], attempt: int) -> float:
-    """Return how long to wait before retrying a throttled or failing request."""
+def _retry_after(
+    headers: dict[str, str], *, clock: Callable[[], float] = time.time
+) -> float | None:
+    """Return the pause ``Retry-After`` asks for, in seconds or as an HTTP date."""
     lowered = {str(key).casefold(): value for key, value in headers.items()}
-    retry_after = lowered.get("retry-after")
-    if retry_after and str(retry_after).isdigit():
-        return min(float(retry_after), 60.0)
+    value = lowered.get("retry-after")
+    if not value:
+        return None
+    text = str(value).strip()
+    if text.isdigit():
+        return float(text)
+    try:
+        moment = parsedate_to_datetime(text)
+    except (TypeError, ValueError, IndexError):
+        return None
+    if moment is None:
+        return None
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=UTC)
+    return max(0.0, moment.timestamp() - clock())
+
+
+def _wait_seconds(
+    headers: dict[str, str], attempt: int, *, clock: Callable[[], float] = time.time
+) -> float:
+    """Return how long to wait before retrying a throttled or failing request."""
+    wait = _retry_after(headers, clock=clock)
+    if wait is not None:
+        return wait
+    lowered = {str(key).casefold(): value for key, value in headers.items()}
     reset = lowered.get("x-ratelimit-reset")
     if lowered.get("x-ratelimit-remaining") == "0" and reset and str(reset).isdigit():
-        wait = int(reset) - int(time.time())
+        wait = int(reset) - int(clock())
         if wait > 0:
-            return min(float(wait), 60.0)
+            return float(wait)
     return min(2.0 * (attempt + 1), 30.0)
+
+
+def _is_rate_limit(status: int, headers: dict[str, str], payload: Any) -> bool:
+    """Return whether a failure is a pause GitHub asked for, not a refusal it meant."""
+    if status == 429:
+        return True
+    if status != 403:
+        return False
+    if _retry_after(headers) is not None:
+        return True
+    lowered = {str(key).casefold(): value for key, value in headers.items()}
+    if lowered.get("x-ratelimit-remaining") == "0":
+        return True
+    message = payload.get("message") if isinstance(payload, dict) else payload
+    text = str(message or "").casefold()
+    return "rate limit" in text or "abuse" in text
 
 
 class GithubClient:
@@ -105,6 +160,7 @@ class GithubClient:
         timeout: float = 25.0,
         pause: float = 0.0,
         attempts: int = MAX_ATTEMPTS,
+        rate_limit_attempts: int = MAX_RATE_LIMIT_ATTEMPTS,
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
         """Wrap a budget with a transport, a token, and the retry policy."""
@@ -112,6 +168,7 @@ class GithubClient:
         self.timeout = timeout
         self.pause = pause
         self.attempts = max(attempts, 1)
+        self.rate_limit_attempts = max(rate_limit_attempts, 1)
         self._sleep = sleep
         self._token = token
         self._fetch = fetch
@@ -134,9 +191,13 @@ class GithubClient:
 
         A 422 is raised instead of swallowed: it is how GitHub reports a query it cannot run,
         such as the unknown app slug that would otherwise look like an agent with no merged
-        pull requests and quietly halve a cohort.
+        pull requests and quietly halve a cohort. A rate-limit pause is slept and retried
+        when it is short, and raised as ``RateLimited`` when it is longer than the client
+        absorbs inline, so a caller can wait it out instead of losing the request.
         """
-        for attempt in range(self.attempts):
+        transient = 0
+        limited = 0
+        while True:
             status, headers, payload = self._call(url)
             self.budget.observe(headers)
             if status == 200:
@@ -144,15 +205,25 @@ class GithubClient:
             if status == 422:
                 message = payload.get("message") if isinstance(payload, dict) else payload
                 raise GithubError(f"GitHub rejected {url}: {message}")
-            if status in (403, 429) or status >= 500 or status == 0:
+            if _is_rate_limit(status, headers, payload):
+                limited += 1
+                wait = _wait_seconds(headers, limited - 1)
+                self.budget.record_rate_limit(wait)
+                if limited >= self.rate_limit_attempts or wait > MAX_INLINE_WAIT:
+                    raise RateLimited(url, wait)
+                if wait > 0:
+                    self._sleep(wait)
+                continue
+            if status >= 500 or status == 0:
+                transient += 1
                 detail = f"HTTP {status}" if status else "no response"
                 self.errors.append(f"{url}: {detail}")
-                if attempt + 1 < self.attempts:
-                    self._sleep(_wait_seconds(headers, attempt))
+                if transient >= self.attempts:
+                    return None
+                self._sleep(_wait_seconds(headers, transient - 1))
                 continue
             self.misses.append(f"{url}: HTTP {status}")
             return None
-        return None
 
     def raw(self, url: str) -> str | None:
         """Return raw file text from the content CDN, which is outside the API quota."""
@@ -187,6 +258,7 @@ __all__ = [
     "Fetcher",
     "GithubClient",
     "GithubError",
+    "RateLimited",
     "github_token",
     "urllib_fetch",
 ]

@@ -25,6 +25,8 @@ import os
 import tempfile
 import unittest
 import urllib.parse
+from datetime import UTC, datetime
+from email.utils import format_datetime
 from typing import Any
 from unittest import mock
 
@@ -40,7 +42,13 @@ from data.harvest.agents import (
 )
 from data.harvest.attribution import classify_touches, file_truth
 from data.harvest.budget import BudgetExceeded, RequestBudget
-from data.harvest.client import GithubClient, GithubError, github_token
+from data.harvest.client import (
+    GithubClient,
+    GithubError,
+    RateLimited,
+    _wait_seconds,
+    github_token,
+)
 from data.harvest.cohort import (
     candidate_files,
     harvest,
@@ -241,6 +249,66 @@ def repository_routes(
 
 AGENT_FILE_LINES = "\n".join(f"line {index}" for index in range(200)) + "\n"
 HUMAN_FILE_LINES = "\n".join(f"line {index}" for index in range(120)) + "\n"
+
+
+def answering(*results):
+    """Return a transport that answers each request with the next recorded result."""
+    queue = list(results)
+
+    def fetch(_url: str):
+        """Answer from the queue, or with a miss once it is empty."""
+        return queue.pop(0) if queue else (404, {}, {"message": "Not Found"})
+
+    return fetch
+
+
+def rate_limited_search(retry_after: str = "300"):
+    """Answer the agent search with a secondary-limit 403 and everything else with 404."""
+    query = "is:pr is:merged author:app/copilot-swe-agent merged:2026-09-01..2026-09-30"
+    encoded = urllib.parse.quote(query)
+
+    def fetch(url: str):
+        """Refuse the search page with GitHub's pause instead of an empty result."""
+        if encoded in url:
+            return 403, {"Retry-After": retry_after}, {
+                "message": "You have exceeded a secondary rate limit. Please wait a few minutes."
+            }
+        return 404, {}, {"message": "Not Found"}
+
+    return fetch
+
+
+def repository_search_fake(repos: list[str]) -> FakeGithub:
+    """Record one search over the named agent-authored repositories."""
+    query = "is:pr is:merged author:app/copilot-swe-agent merged:2026-09-01..2026-09-30"
+    routes: dict[str, Any] = {}
+    texts: dict[str, str] = {}
+    items = []
+    for repo in repos:
+        repo_routes, repo_texts = repository_routes(
+            repo=repo,
+            histories={
+                "src/agent.py": [copilot_commit(f"agent-sha-{repo}")],
+                "src/human.py": [commit(f"human-sha-{repo}")],
+            },
+            texts={"src/agent.py": AGENT_FILE_LINES, "src/human.py": HUMAN_FILE_LINES},
+        )
+        repo_routes[f"/repos/acme/{repo}/commits/agent-sha-{repo}"] = {
+            "files": [{"filename": "src/agent.py", "additions": 150}]
+        }
+        routes.update(repo_routes)
+        texts.update(repo_texts)
+        items.append(
+            {
+                "html_url": f"https://github.com/acme/{repo}/pull/7",
+                "repository_url": f"https://api.github.com/repos/acme/{repo}",
+                "number": 7,
+                "user": {"login": "Copilot"},
+                "pull_request": {"merged_at": "2026-09-02T12:00:00Z"},
+            }
+        )
+    routes.update([search_route(query, {"total_count": len(items), "items": items})])
+    return FakeGithub(routes, texts)
 
 
 class TestSearchPartitioning(unittest.TestCase):
@@ -1071,6 +1139,314 @@ class TestHarvestCommand(unittest.TestCase):
                 ])
 
             self.assertEqual(code, 1)
+
+
+_UNSET = object()
+
+
+class TestResumeToGoalCommand(unittest.TestCase):
+    """Check the pass loop: fresh budgets, waiting, and its stop rules."""
+
+    def _run(self, path: str, extra: list[str], fakes, *, wait=_UNSET, sleep=None):
+        """Run the command against one recorded GitHub per pass and read its provenance."""
+        seen: list[RequestBudget] = []
+
+        def client_from_budget(budget, **_kwargs):
+            seen.append(budget)
+            return GithubClient(budget, fetch=fakes[len(seen) - 1])
+
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(mock.patch.object(cli, "GithubClient", client_from_budget))
+            stack.enter_context(mock.patch.object(cli, "github_token", lambda: "token"))
+            printed = stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
+            if wait is not _UNSET:
+                stack.enter_context(
+                    mock.patch.object(cli, "_reset_wait", return_value=wait)
+                )
+            if sleep is not None:
+                stack.enter_context(mock.patch.object(cli.time, "sleep", sleep))
+            code = cli.main(
+                [
+                    "--agents", "copilot-swe-agent", "--since", "2026-09-01",
+                    "--until", "2026-09-30", "--per-agent-limit", "5",
+                    "--out", path, *extra,
+                ]
+            )
+        provenance = os.path.splitext(path)[0] + ".provenance.json"
+        with open(provenance, encoding="utf-8") as handle:
+            runs = json.load(handle)["runs"]
+        return code, seen, printed.getvalue(), runs
+
+    def test_passes_continue_with_a_fresh_budget_until_the_goal(self) -> None:
+        """Spend one budget per pass and stop as soon as the cohort reaches the goal."""
+        with tempfile.TemporaryDirectory() as folder:
+            path = os.path.join(folder, "cohort.jsonl")
+            code, budgets, _, runs = self._run(
+                path,
+                ["--max-repositories", "2", "--resume-to-goal"],
+                [repository_search_fake(["alpha"]), repository_search_fake(["beta"])],
+            )
+
+            self.assertEqual(code, 0)
+            self.assertEqual(len(budgets), 2)
+            self.assertEqual([run["pass"] for run in runs], [1, 2])
+            self.assertEqual([run["phase"] for run in runs], ["harvest", "harvest"])
+            self.assertEqual([run["cohort"]["repository"] for run in runs], [1, 2])
+            self.assertEqual([run["budget"]["ceiling"] for run in runs], [5000, 5000])
+            self.assertEqual(len(read_cohort(path).repositories), 2)
+
+    def test_a_spent_budget_waits_for_the_reset_before_the_next_pass(self) -> None:
+        """Sleep for the reported reset instead of starting a pass that would be throttled."""
+        with tempfile.TemporaryDirectory() as folder:
+            path = os.path.join(folder, "cohort.jsonl")
+            sleeper = mock.Mock()
+            code, budgets, printed, _ = self._run(
+                path,
+                ["--max-repositories", "2", "--resume-to-goal"],
+                [repository_search_fake(["alpha"]), repository_search_fake(["beta"])],
+                wait=42.0,
+                sleep=sleeper,
+            )
+
+            self.assertEqual(code, 0)
+            self.assertEqual(len(budgets), 2)
+            sleeper.assert_called_once_with(42.0)
+            self.assertIn("waiting 42s for the GitHub rate limit", printed)
+
+    def test_an_unknown_reset_stops_instead_of_guessing(self) -> None:
+        """Refuse to sleep an invented hour when no reset header was ever observed."""
+        with tempfile.TemporaryDirectory() as folder:
+            path = os.path.join(folder, "cohort.jsonl")
+            code, budgets, printed, _ = self._run(
+                path,
+                ["--max-repositories", "2", "--resume-to-goal"],
+                [repository_search_fake(["alpha"]), repository_search_fake(["beta"])],
+                wait=None,
+            )
+
+            self.assertEqual(code, 1)
+            self.assertEqual(len(budgets), 1)
+            self.assertIn("no rate-limit reset", printed)
+
+    def test_a_pass_without_progress_stops_the_loop(self) -> None:
+        """Stop rather than repeat a search that cannot add another repository."""
+        with tempfile.TemporaryDirectory() as folder:
+            path = os.path.join(folder, "cohort.jsonl")
+            code, budgets, printed, _ = self._run(
+                path,
+                ["--max-repositories", "3", "--resume-to-goal"],
+                [repository_search_fake(["alpha"]), repository_search_fake([])],
+            )
+
+            self.assertEqual(code, 1)
+            self.assertEqual(len(budgets), 2)
+            self.assertIn("recorded no new repository", printed)
+
+    def test_the_pass_cap_ends_the_command_short_of_the_goal(self) -> None:
+        """Honour --max-runs and report the shortfall instead of looping forever."""
+        with tempfile.TemporaryDirectory() as folder:
+            path = os.path.join(folder, "cohort.jsonl")
+            code, budgets, printed, _ = self._run(
+                path,
+                ["--max-repositories", "5", "--max-runs", "2", "--resume-to-goal"],
+                [repository_search_fake(["alpha"]), repository_search_fake(["beta"])],
+            )
+
+            self.assertEqual(code, 1)
+            self.assertEqual(len(budgets), 2)
+            self.assertIn("the goal was not reached", printed)
+
+    def test_a_rate_limited_pass_waits_its_retry_after_and_continues(self) -> None:
+        """Treat a pause as retryable instead of as a pass that made no progress."""
+        with tempfile.TemporaryDirectory() as folder:
+            path = os.path.join(folder, "cohort.jsonl")
+            sleeper = mock.Mock()
+            code, budgets, printed, runs = self._run(
+                path,
+                ["--max-repositories", "2", "--max-runs", "3", "--resume-to-goal"],
+                [
+                    repository_search_fake(["alpha"]),
+                    rate_limited_search(),
+                    repository_search_fake(["beta"]),
+                ],
+                sleep=sleeper,
+            )
+
+            self.assertEqual(code, 0)
+            self.assertEqual(len(budgets), 3)
+            sleeper.assert_called_once_with(305.0)
+            self.assertIn("waiting 305s", printed)
+            self.assertEqual([run["pass"] for run in runs], [1, 2, 3])
+
+    def test_a_rate_limited_single_pass_exits_nonzero(self) -> None:
+        """Never report a paused run as a completed one."""
+        with tempfile.TemporaryDirectory() as folder:
+            path = os.path.join(folder, "cohort.jsonl")
+            code, budgets, printed, _ = self._run(
+                path, [], [rate_limited_search()]
+            )
+
+            self.assertEqual(code, 1)
+            self.assertEqual(len(budgets), 1)
+            self.assertIn("GitHub asked for a pause", printed)
+
+    def test_a_zero_pass_cap_is_refused(self) -> None:
+        """Refuse a cap that would make the mode do nothing at all."""
+        with self.assertRaises(SystemExit):
+            cli.main(["--max-runs", "0", "--dry-run"])
+
+
+class TestResetWait(unittest.TestCase):
+    """Check how long a spent budget should wait before the next pass."""
+
+    def test_a_local_budget_with_room_continues_immediately(self) -> None:
+        """Continue when the pass stopped for a reason other than its own ceiling."""
+        budget = RequestBudget(ceiling=10)
+
+        self.assertEqual(cli._reset_wait(budget), 0.0)
+
+    def test_hourly_quota_left_continues_immediately(self) -> None:
+        """Continue when the local ceiling is spent but GitHub still allows requests."""
+        budget = RequestBudget(ceiling=10)
+        budget.spent = 10
+        budget.rate_remaining = 5
+
+        self.assertEqual(cli._reset_wait(budget), 0.0)
+
+    def test_a_spent_quota_waits_past_the_reported_reset(self) -> None:
+        """Wait until the reported reset plus a margin once the quota is gone."""
+        budget = RequestBudget(ceiling=10)
+        budget.spent = 10
+        budget.rate_remaining = 0
+        budget.rate_reset = 1000
+
+        self.assertEqual(cli._reset_wait(budget, clock=lambda: 940), 65.0)
+
+    def test_a_missing_reset_is_not_guessed(self) -> None:
+        """Return no wait so the caller can stop rather than sleep an invented interval."""
+        budget = RequestBudget(ceiling=10)
+        budget.spent = 10
+        budget.rate_remaining = 0
+        budget.rate_reset = 0
+
+        self.assertIsNone(cli._reset_wait(budget))
+
+    def test_a_reported_pause_wins_over_a_spent_budget(self) -> None:
+        """Wait the pause the harvest reported, not the reset the budget observed."""
+        budget = RequestBudget(ceiling=10)
+        budget.spent = 10
+
+        self.assertEqual(cli._reset_wait(budget, retry_after=300), 305.0)
+
+
+class TestRateLimitPolicy(unittest.TestCase):
+    """Check how GitHub's pauses are classified and waited out."""
+
+    def test_retry_after_seconds_is_not_truncated(self) -> None:
+        """Honour a pause longer than the old one-minute cap."""
+        self.assertEqual(_wait_seconds({"Retry-After": "300"}, 0), 300.0)
+
+    def test_retry_after_http_date_is_measured_from_now(self) -> None:
+        """Read an HTTP-date form as the remaining time, not as seconds."""
+        moment = datetime(2026, 10, 19, 12, 5, tzinfo=UTC)
+        header = format_datetime(moment, usegmt=True)
+
+        wait = _wait_seconds(
+            {"Retry-After": header}, 0, clock=lambda: moment.timestamp() - 60
+        )
+
+        self.assertAlmostEqual(wait, 60.0, delta=1.0)
+
+    def test_a_primary_reset_is_not_truncated_to_a_minute(self) -> None:
+        """Wait the reset the headers report, however far away it is."""
+        wait = _wait_seconds(
+            {"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "1000"},
+            0,
+            clock=lambda: 400,
+        )
+
+        self.assertEqual(wait, 600.0)
+
+    def test_a_secondary_limit_pauses_and_then_succeeds(self) -> None:
+        """Sleep the short pause and retry the same request."""
+        slept: list[float] = []
+        budget = RequestBudget()
+        client = GithubClient(
+            budget,
+            fetch=answering(
+                (
+                    403,
+                    {"Retry-After": "30"},
+                    {"message": "You have exceeded a secondary rate limit."},
+                ),
+                (200, {}, {"ok": True}),
+            ),
+            sleep=slept.append,
+        )
+
+        self.assertEqual(client.get("https://api.github.com/x"), {"ok": True})
+        self.assertEqual(slept, [30.0])
+        self.assertEqual(budget.rate_limited, 1)
+        self.assertEqual(budget.rate_limit_waits, [30.0])
+        self.assertEqual(budget.to_dict()["rate_limited"], 1)
+        self.assertEqual(budget.to_dict()["rate_limit_waits"], [30.0])
+
+    def test_a_pause_longer_than_the_inline_cap_is_raised(self) -> None:
+        """Surface a long pause to the caller instead of blocking the pass."""
+        slept: list[float] = []
+        budget = RequestBudget()
+        client = GithubClient(
+            budget,
+            fetch=answering((429, {"Retry-After": "600"}, {"message": "slow down"})),
+            sleep=slept.append,
+        )
+
+        with self.assertRaises(RateLimited) as caught:
+            client.get("https://api.github.com/x")
+
+        self.assertEqual(caught.exception.retry_after, 600.0)
+        self.assertEqual(slept, [])
+        self.assertEqual(budget.rate_limited, 1)
+
+    def test_a_permission_403_is_a_miss_and_is_not_retried(self) -> None:
+        """Keep a private repository a miss rather than a rate limit."""
+        calls: list[str] = []
+
+        def fetch(url: str):
+            """Answer with a plain forbidden response and normal quota headers."""
+            calls.append(url)
+            return 403, {"X-RateLimit-Remaining": "4999"}, {"message": "Forbidden"}
+
+        client = GithubClient(RequestBudget(), fetch=fetch, sleep=lambda _: None)
+
+        self.assertIsNone(client.get("https://api.github.com/x"))
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(client.misses, ["https://api.github.com/x: HTTP 403"])
+
+
+class TestRateLimitedHarvest(unittest.TestCase):
+    """Check that a pause stops the pass without losing the window silently."""
+
+    def test_a_rate_limited_search_stops_with_its_retry_after(self) -> None:
+        """Record the pause on the summary instead of a zero-result partition."""
+        with tempfile.TemporaryDirectory() as folder:
+            path = os.path.join(folder, "cohort.jsonl")
+            client = GithubClient(RequestBudget(), fetch=rate_limited_search())
+            with contextlib.redirect_stdout(io.StringIO()):
+                summary = harvest(
+                    client,
+                    since="2026-09-01",
+                    until="2026-09-30",
+                    per_agent_limit=5,
+                    max_repositories=10,
+                    store=CohortStore(path),
+                )
+
+            self.assertEqual(summary.repositories, 0)
+            self.assertEqual(summary.retry_after, 300.0)
+            self.assertIn("rate limited", summary.stopped)
+            self.assertEqual(summary.partitions, [])
+            self.assertFalse(os.path.exists(path))
 
 
 @pytest.mark.live

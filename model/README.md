@@ -30,7 +30,7 @@ uv run src/cli.py train                        # train, select, gate, merge, and
 
 **2. Converter.** The release step at the end of training shells out to `llama.cpp/convert_hf_to_gguf.py`; the workspace's own dependencies already satisfy its imports, so the clone is the only setup it needs. Training registers an Ollama tag as its last action, so start Ollama before step 5 rather than discovering it is missing after twenty hours.
 
-**3. Data.** `scripts/build_candidate_from_harvest.sh` harvests agent-attributed and human repositories, verifies the resulting manifest with the same fail-closed validator the builder uses, and writes `data/dataset.candidate.jsonl`. It is resumable: rerunning it after an interruption continues the cohort instead of starting over. Without `GITHUB_TOKEN` the harvest runs at 60 core requests an hour and will not finish. The build also downloads the AIGCodeSet rows and fetches repository snapshots, so it needs network access.
+**3. Data.** `scripts/build_candidate_from_harvest.sh` harvests agent-attributed and human repositories, verifies the resulting manifest with the same fail-closed validator the builder uses, and writes `data/dataset.candidate.jsonl`. It is resumable: rerunning it after an interruption continues the cohort instead of starting over. One budget cannot always reach the repository goal, so `harvest --resume-to-goal` keeps starting fresh budgets and waits out GitHub's hourly reset until `--max-repositories` is reached. Without `GITHUB_TOKEN` the harvest runs at 60 core requests an hour and will not finish. The build also downloads the AIGCodeSet rows and fetches repository snapshots, so it needs network access.
 
 If the existing checkout is available, copying `model/data/` across (about 33 MB) skips the harvest entirely; it holds the label manifest, cohort, and candidate dataset that a rebuild would reproduce.
 
@@ -56,6 +56,7 @@ Run from `model/`. Use `uv run src/cli.py <command> -h` for complete options.
 | List model commands | `uv run src/cli.py -h` |
 | Harvest labels and build the default candidate | `./scripts/build_candidate_from_harvest.sh` |
 | Harvest an audited repository cohort | `uv run src/cli.py harvest --since 2026-09-01 --until 2026-09-30 --labels-out data/labels.audited.jsonl` |
+| Harvest to a repository goal across budgets | `uv run src/cli.py harvest --max-repositories 220 --resume-to-goal --labels-out data/repository_labels.jsonl` |
 | Build with an existing audited manifest | `uv run src/cli.py data -r data/candidate_repos.txt --repository-labels data/repository_labels.jsonl` |
 | Show data-builder options | `uv run src/cli.py data -h` |
 | Validate inputs and paths without training | `uv run src/cli.py train --preflight-only` |
@@ -87,6 +88,31 @@ uv run --project model --group dev ruff check model/src
 The default total run cap is 20 hours, including reserved validation, final-test, and release time. Each optimizer round is capped at 500 steps by default. Generated teaching-label agreement does not establish real-world authorship accuracy.
 
 A machine that loses power between the selected-adapter save and the merged-weight write leaves a run that cannot simply be restarted: the one-time independent test is already claimed, so `train` refuses to score it again. `recover --run-id <run-id>` finishes that run instead. It never re-scores the reserve test; it rebuilds only the merge, conversion, and registration from the adapter and validation diagnostics the run already wrote, and it refuses unless the saved adapter postdates the claim and still matches the recovered checkpoint tensor by tensor. The build records its own provenance in `merge_recovery.json` beside the merged weights.
+
+## Where artifacts land
+
+Training writes two trees, and the split is deliberate: `outputs/` is the run's working state, `models/` is the deliverable. Both are ignored by Git, so they never arrive with a clone. The run id in every path is the one printed when preflight or training starts (`[i] This run writes checkpoints to outputs/<run-id>`).
+
+### `outputs/` — the run
+
+| Path | Written when | Contents | Size |
+| --- | --- | --- | --- |
+| `outputs/<run-id>/run_metadata.json` | run start | base model, max length, step cap, start time, and `forked_from` for a fork | small |
+| `outputs/<run-id>/round-<NN>/checkpoint-<N>/` | each evaluation point | the PEFT adapter for that step, its tokenizer, and `trainer_state.json`; a checkpoint is resumable, not a standalone model | about 280 MB |
+| `outputs/<run-id>/validation-checkpoint-<N>.jsonl` | each validation scoring with row predictions | per-row gate evidence and generated responses; a repeat gets `-02`, then `-03` | a few MB |
+| `outputs/<run-id>/.independent-test-attempted/` | immediately before the final test | an empty directory used as an atomic claim; its presence is what refuses a second attempt | — |
+| `outputs/lora_adapter-<run-id>/` | release | the selected checkpoint's adapter in PEFT form (`adapter_config.json`, `adapter_model.safetensors`) | about 260 MB |
+
+### `models/` — the model
+
+| Path | Written when | Contents | Size |
+| --- | --- | --- | --- |
+| `models/qwen3_ai_detector_merged-<run-id>/` | release | 16-bit merged weights and their shard index, plus config, tokenizer, chat template, and `merge_stamp.json`; loadable by `transformers` without Unsloth or the base model | about 30 GB |
+| `models/ai_detector_q8-<run-id>-<digest>.gguf` | release | quantization of the merged weights (`q8_0` by default), named with the first 16 hex characters of the adapter digest; this is the file Ollama serves | about 16 GB |
+
+The merged directory is the artifact to copy to another machine: it is a complete `Qwen2ForCausalLM` checkpoint, while the adapter is only the delta and the GGUF is only for Ollama or llama.cpp. `merge_stamp.json` keeps the adapter hash, base model, training rows, `max_len`, merge time, and both gate results, which is what ties a directory to its run. A recovery adds `merge_recovery.json` beside it. Names carry the run id and adapter digest, so a later run does not overwrite an earlier one.
+
+The two `data/` records are the exception to "generated": `data/deployed_model.json` names the tag the grader resolves, and `data/model_versions.json` records every released version. These are small, committed, and the only model-related files that belong in version control.
 
 ## Data and artifact safety
 

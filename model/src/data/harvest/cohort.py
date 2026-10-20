@@ -31,7 +31,7 @@ from repositories.urls import parse_github_url
 from .agents import AGENT_APPS, AgentApp, agent_for_slug
 from .attribution import TOUCH_WINDOW, classify_touches, commit_sha, file_truth
 from .budget import BudgetExceeded
-from .client import API_ROOT, GithubClient
+from .client import API_ROOT, GithubClient, RateLimited
 from .queries import MergeCandidate, search_merged
 from .records import (
     AGENT_FILE,
@@ -96,6 +96,7 @@ class HarvestSummary:
     repositories: int = 0
     skipped: int = 0
     stopped: str = ""
+    retry_after: float | None = None
     partitions: list[Partition] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
 
@@ -391,6 +392,10 @@ def harvest(
         except BudgetExceeded as exc:
             summary.stopped = str(exc)
             break
+        except RateLimited as exc:
+            summary.stopped = str(exc)
+            summary.retry_after = exc.retry_after
+            break
         summary.partitions.extend(partitions)
         print(
             f"[i] {agent.slug}: {len(candidates)} candidate(s) from "
@@ -407,6 +412,10 @@ def harvest(
             ranked = rank_candidates(client, candidates, known, prefetched)
         except BudgetExceeded as exc:
             summary.stopped = str(exc)
+            break
+        except RateLimited as exc:
+            summary.stopped = str(exc)
+            summary.retry_after = exc.retry_after
             break
         seen: set[str] = set()
         for candidate in ranked:
@@ -430,6 +439,10 @@ def harvest(
                 )
             except BudgetExceeded as exc:
                 summary.stopped = str(exc)
+                break
+            except RateLimited as exc:
+                summary.stopped = str(exc)
+                summary.retry_after = exc.retry_after
                 break
             if truth.rejected:
                 summary.skipped += 1

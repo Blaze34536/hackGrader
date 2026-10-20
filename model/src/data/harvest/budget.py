@@ -34,6 +34,8 @@ class RequestBudget:
     rate_reset: int = 0
     rate_resource: str = ""
     ceiling_hits: int = 0
+    rate_limited: int = 0
+    rate_limit_waits: list[float] = field(default_factory=list)
     _observations: list[dict[str, int | str]] = field(default_factory=list)
 
     @property
@@ -55,6 +57,11 @@ class RequestBudget:
     def note_raw(self, count: int = 1) -> None:
         """Count a content fetch, which the CDN serves outside the API quota."""
         self.raw_spent += count
+
+    def record_rate_limit(self, wait: float) -> None:
+        """Count a rate-limited response and the pause it asked for."""
+        self.rate_limited += 1
+        self.rate_limit_waits.append(wait)
 
     def observe(self, headers: dict[str, str]) -> None:
         """Record the rate limit a response reported, including when it reaches zero.
@@ -92,6 +99,8 @@ class RequestBudget:
             "spent": self.spent,
             "raw_spent": self.raw_spent,
             "ceiling_hits": self.ceiling_hits,
+            "rate_limited": self.rate_limited,
+            "rate_limit_waits": list(self.rate_limit_waits),
             "stopped": self.stopped,
             "rate_limit": self.rate_limit,
             "rate_remaining": self.rate_remaining,

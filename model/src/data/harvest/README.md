@@ -32,6 +32,20 @@ uv run src/cli.py harvest --since 2026-09-01 --until 2026-09-30 \
 an hour, and an anonymous one 60 core and 10 search requests an hour. The run prints which
 limit it is operating under and records the limit GitHub reported.
 
+`--resume-to-goal` builds the cohort in one invocation when one budget cannot reach
+`--max-repositories`. Each pass gets a fresh `--request-budget`; when the hourly quota is
+exhausted the command sleeps until the reported `X-RateLimit-Reset`, then continues. It stops
+early when a pass records no new repository, when no reset was ever reported, or after
+`--max-runs` passes, and it exits non-zero unless the goal was reached. Combining it with
+`--refresh` makes re-reads count toward the goal, so use the two together deliberately.
+
+Rate limits are pauses, not missing resources. A `429`, or a `403` carrying `Retry-After`,
+`X-RateLimit-Remaining: 0`, or a rate-limit message, is honored for its full `Retry-After`
+(seconds or HTTP date) or reset time; waits up to two minutes are absorbed inline and retried.
+A longer pause stops the pass with its `retry_after` recorded, which `--resume-to-goal` waits
+out before the next budget; a single-pass run prints the pause and exits non-zero. An ordinary
+`403` such as a private repository stays a miss and is not retried.
+
 | Option | Default | Effect |
 | --- | ---: | --- |
 | `--agents` | all registered | Comma-separated registered agent slugs to search. |
@@ -43,6 +57,8 @@ limit it is operating under and records the limit GitHub reported.
 | `--human-repositories` | none | File of repository URLs to verify as the human class. |
 | `--human-before` | `2023-01-01` | Date every commit of a human-class repository must predate. |
 | `--request-budget` | `5000` | Metered requests this run may spend. |
+| `--resume-to-goal` | off | Keep harvesting with a fresh budget until `--max-repositories` is reached. |
+| `--max-runs` | `4` | Harvest passes `--resume-to-goal` may spend. |
 | `--max-files-per-repository` | `40` | Files attributed per repository, ranked as the reader ranks them. |
 | `--touch-window` | `5` | Commits examined per file, which decides the human class. |
 | `--pause` | `0` | Seconds before each metered request, for anonymous search limits. |
@@ -102,7 +118,7 @@ file-level attribution, and the harvest says so instead of guessing.
 | File | Contents |
 | --- | --- |
 | `data/cohort.jsonl` | One record per repository: the agent pull request and merge commit, every examined file with its last-touch SHA, author, attribution, additions, and current length, plus the requests spent. |
-| `cohort.provenance.json` | One entry per run: the search queries, their result counts and pages read, the rate limit observed, the budget spent, the languages reached, and every human-class rejection with its reason. |
+| `cohort.provenance.json` | One entry per run, or per pass under `--resume-to-goal`: the search queries, their result counts and pages read, the rate limit observed, the budget spent, the languages reached, and every human-class rejection with its reason. |
 | the `--labels-out` manifest | `ai` entries carrying the pull request and merge commit, and `human` entries carrying the protocol that ruled the class in. |
 
 The cohort file is appended to and fsynced per repository, so a run that loses its budget or
