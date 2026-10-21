@@ -2,6 +2,7 @@
 
 import gc
 
+from .. import distributed
 from ..training import artifacts
 from .resume import require_selection
 
@@ -49,7 +50,8 @@ def run_training(
         else hooks["_round_model"](dependencies, continuation_checkpoint)
     )
     train_dataset, eval_dataset = prepare(tokenizer, train_rows, validation_rows)
-    report()
+    if distributed.is_main():
+        report()
     run_rounds = (
         run_rounds or hooks.get("run_training_rounds") or hooks["run_training_rounds"]
     )
@@ -77,6 +79,10 @@ def run_training(
     del model, tokenizer
     gc.collect()
     torch.cuda.empty_cache()
+    if not distributed.is_main():
+        # Training is finished for this worker; scoring, testing, merging, and
+        # registration belong to the main worker alone.
+        return
     provisional = bool(
         selected
         and selected.cap_reached

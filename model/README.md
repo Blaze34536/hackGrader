@@ -38,6 +38,8 @@ If the existing checkout is available, copying `model/data/` across (about 33 MB
 
 **5. Train.** A normal run trains, selects checkpoints on validation, scores the reserved independent test once, and — only if both gates pass — saves the adapter, merges the weights, converts the GGUF, and registers the next `hackgrader:vN` tag. Fail a gate and nothing is merged or registered. Record the run id it prints (`outputs/<run-id>`) if you want to inspect the run afterwards. The default cap is 20 hours, so start it in a persistent session (`tmux` or an equivalent) instead of a terminal that a dropped connection would end.
 
+**Multi-GPU.** `train` uses every visible CUDA GPU by default (`HACKGRADER_GPUS=auto`): it relaunches itself under `torchrun`, one pipeline worker per GPU, and each worker holds a full 4-bit model replica, so every GPU has to fit the model on its own. DDP needs NCCL, which PyTorch provides on Linux only; with one GPU, without NCCL (including Windows), or with `HACKGRADER_GPUS=1` the run prints why and trains on a single GPU. Worker 0 alone scores validation, spends the independent test, merges, and registers; the other workers train and follow its per-round decisions through `outputs/<run-id>/workers/`, then exit when training ends. Gradient accumulation is divided across the workers, so the optimizer batch stays at the single-GPU size and extra GPUs buy speed rather than a different learning problem. `--preflight-only` and `--release-only` never launch a distributed job, and `--fresh-repositories` builds its data in-process before training, so that invocation stays single-GPU.
+
 **6. Confirm the release.** The deployment is part of step 5; these two commands only read it back:
 
 ```bash
@@ -128,7 +130,7 @@ Environment variables are read when the process starts. Common settings include:
 | --- | --- |
 | Input datasets | `HACKGRADER_DATASET_FILE`, `HACKGRADER_TRAIN_FILE`, `HACKGRADER_VAL_FILE`, `HACKGRADER_TEST_FILE` |
 | Output locations | `HACKGRADER_OUTPUT_DIR`, `HACKGRADER_ADAPTER_DIR`, `HACKGRADER_MERGE_DIR`, `HACKGRADER_RUN_ID` |
-| Model and training | `HACKGRADER_BASE_MODEL`, `HACKGRADER_HOURS`, `HACKGRADER_MAX_STEPS_PER_ROUND`, `HACKGRADER_MAX_GATE_CANDIDATES`, `HACKGRADER_BATCH`, `HACKGRADER_ACCUM`, `HACKGRADER_MAX_LEN` |
+| Model and training | `HACKGRADER_BASE_MODEL`, `HACKGRADER_HOURS`, `HACKGRADER_MAX_STEPS_PER_ROUND`, `HACKGRADER_MAX_GATE_CANDIDATES`, `HACKGRADER_BATCH`, `HACKGRADER_ACCUM`, `HACKGRADER_MAX_LEN`, `HACKGRADER_GPUS` |
 | Evaluation and gates | `HACKGRADER_CHECK_ROWS`, `HACKGRADER_MIN_TEST_ROWS`, `HACKGRADER_MIN_TEST_CLASS_ROWS`, `HACKGRADER_TEST_MIN_PRECISION`, `HACKGRADER_TEST_MIN_RECALL`, `HACKGRADER_TEST_MIN_SPECIFICITY`, `HACKGRADER_HOLDOUT_MAE_LIMIT`, `HACKGRADER_MIN_HOLDOUT_SPREAD`, `HACKGRADER_MIN_HOLDOUT_SEPARATION` |
 
 Defaults and validation are in [`src/learning/config.py`](src/learning/config.py), [`src/learning/config_validation.py`](src/learning/config_validation.py), [`src/data/config.py`](src/data/config.py), and [`src/learning/training/trainer_config.py`](src/learning/training/trainer_config.py). The detailed candidate schema and score bands are in the [data reference](src/data/README.md).
@@ -137,7 +139,7 @@ Defaults and validation are in [`src/learning/config.py`](src/learning/config.py
 
 | Path | Responsibility |
 | --- | --- |
-| [`src/cli.py`](src/cli.py) | Dispatches `data`, `train`, `score`, and `deploy`. |
+| [`src/cli.py`](src/cli.py) | Dispatches `data`, `train`, `score`, and `deploy`, and relaunches `train` under torchrun when several GPUs should train. |
 | [`src/data/`](src/data/README.md) | Candidate collection, rendering, provenance, validation, and splitting. |
 | [`src/data/harvest/`](src/data/harvest/README.md) | Merged agent pull requests, per-file last-touch attribution, and the audited label manifest. |
 | [`src/learning/`](src/learning/README.md) | Preflight, bounded training, holdout gates, scoring, and release. |

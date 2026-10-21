@@ -16,6 +16,7 @@ import unittest
 import contracts as report
 import detection as detector
 from data import config
+from detection.reports import build_report
 from data.evidence import label_evidence, signal_line
 from data.features import evidence_score, machine_likeness, visible_features
 from data.labels import (
@@ -26,6 +27,8 @@ from data.labels import (
     validate_entries,
 )
 from data.rendering import batch_measurement
+from learning import config as training_config
+from learning.config_validation import validate_config
 
 # One weighting for the checks below, so a target's arithmetic is read rather than inferred
 # from feature fitting: documentation and comment density are the code-side measurements a
@@ -330,6 +333,121 @@ class TestVerifiedTargetsAreMeasured(unittest.TestCase):
         self.assertEqual(rejected, [])
         stored = next(iter(accepted.values()))
         self.assertEqual(measured_share(stored), 30.0)
+
+
+class TestTargetsCarryTheirReasoning(unittest.TestCase):
+    """Check that a target states what sets each number, not only the numbers.
+
+    A target holding three numbers and one sentence let an adapter fit the score arithmetic
+    from the measurements printed in the prompt and reach a train loss of 0.12 inside 400
+    examples without ever producing a justification. The served contract asks the judge for
+    a ``- Why this score:`` line under both scores, so the target has to demonstrate them.
+    """
+
+    def test_each_score_is_followed_by_the_reason_the_prompt_asks_for(self) -> None:
+        """Carry both justifications, in the positions the report parser reads around."""
+        target = build_report(DOCUMENTED_PROBE, seed=1)
+
+        self.assertEqual(target.count("- Why this score:"), 2)
+        self.assertLess(
+            target.index("- Why this score:"), target.index("Ranked AI evidence")
+        )
+        self.assertGreater(
+            target.index("- Why this score:", target.index("Ranked AI evidence")),
+            target.index("Ranked AI evidence"),
+        )
+        self.assertTrue(report.is_valid_report(target), target)
+
+    def test_the_reason_names_the_sign_that_sets_the_number(self) -> None:
+        """Point at the ranked sign and the direction a stronger or weaker view would move."""
+        evidence = [
+            "6 of 8 definitions have docstrings, for example `def task_0(value):` in "
+            "src/service.py"
+        ]
+
+        target = build_report(
+            DOCUMENTED_PROBE, seed=1, ai_score=61, ai_evidence=evidence
+        )
+        reason = next(
+            line for line in target.splitlines() if line.startswith("- Why this score:")
+        )
+
+        self.assertIn("6 of 8 definitions have docstrings", reason)
+        self.assertIn("move the score up", reason)
+
+    def test_a_target_still_verifies_its_own_citations(self) -> None:
+        """Keep the added prose outside the evidence block the citation check reads."""
+        evidence = label_evidence(
+            DOCUMENTED_PROBE, 1, detector.analyze(DOCUMENTED_PROBE), WEIGHTS
+        )
+
+        target = report.render_report(
+            target_of(DOCUMENTED_PROBE),
+            evidence,
+            80,
+            [],
+            "One module beside its own description.",
+            ai_reason="Rank 1 sets this number: the docstrings shown in src/service.py.",
+            quality_reason="No deduction applies to the files shown.",
+        )
+
+        self.assertEqual(report.verify_citations(target, DOCUMENTED_PROBE), [])
+        self.assertTrue(report.is_valid_report(target), target)
+        self.assertEqual(len(report.evidence_claims(target)), len(evidence))
+
+    def test_a_report_without_reasons_keeps_the_published_shape(self) -> None:
+        """Render a stored or fixture report unchanged when no reasoning is supplied."""
+        target = report.render_report(
+            20,
+            ["observed `print` in app.py"],
+            80,
+            [],
+            "The app entry point is compact and its output is straightforward to review.",
+        )
+
+        self.assertNotIn("Why this score", target)
+        self.assertEqual(report.parse_report(target)["ai_score"], 20)
+
+
+class TestTrainingDynamicsSettings(unittest.TestCase):
+    """Check the knobs that decide how fast the adapter fits its rows.
+
+    A run at 1e-4 with no dropout reached a train loss of 0.12 inside 400 examples, so the
+    defaults now regularize the adapters. A nonsensical value has to fail before the data is
+    loaded rather than after hours of training.
+    """
+
+    def settings(self, **overrides: object) -> dict[str, object]:
+        """Return the configured training settings, optionally overridden."""
+        values = {
+            name: value
+            for name, value in vars(training_config).items()
+            if name.isupper()
+        }
+        values.update(overrides)
+        return values
+
+    def test_the_defaults_regularize_the_adapter(self) -> None:
+        """Keep dropout on, weight decay positive, and the rate below the overfitting run."""
+        settings = self.settings()
+
+        validate_config(settings)
+        self.assertGreater(settings["LORA_DROPOUT"], 0)
+        self.assertLess(settings["LORA_DROPOUT"], 0.5)
+        self.assertGreater(settings["WEIGHT_DECAY"], 0)
+        self.assertLessEqual(settings["LORA_LR"], 5e-5)
+
+    def test_a_dropout_outside_the_unit_interval_is_rejected(self) -> None:
+        """Refuse a dropout that would zero the adapter or leave it disabled."""
+        for value in (-0.1, 1.0):
+            with self.subTest(dropout=value):
+                with self.assertRaises(ValueError):
+                    validate_config(self.settings(LORA_DROPOUT=value))
+
+    def test_a_negative_weight_decay_is_rejected(self) -> None:
+        """Refuse a decay that would grow the weights instead of shrinking them."""
+        with self.assertRaises(ValueError):
+            validate_config(self.settings(WEIGHT_DECAY=-0.01))
 
 
 if __name__ == "__main__":

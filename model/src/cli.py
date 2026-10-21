@@ -153,6 +153,20 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "provide all three of --train-file, --validation-file, and --test-file"
             )
 
+        from learning import distributed
+
+        if not options.preflight_only and not options.release_only:
+            if options.fresh_repositories:
+                print(
+                    "[i] --fresh-repositories builds its data in this process, so this "
+                    "invocation trains on one GPU; rerun `train --dataset <built file>` "
+                    "to train on every GPU."
+                )
+            else:
+                command = distributed.worker_command(arguments, script=__file__)
+                if command is not None:
+                    return distributed.launch(command)
+
         from learning.pipeline import main as run_training
 
         if options.fresh_repositories:

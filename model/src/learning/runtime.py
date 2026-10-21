@@ -11,7 +11,8 @@ import contextlib
 import os
 from typing import Any
 
-from .config import BASE_MODEL, GRAD_CHECKPOINTING, MAX_LEN
+from . import distributed
+from .config import BASE_MODEL, GRAD_CHECKPOINTING, LORA_DROPOUT, MAX_LEN
 from .inputs import configure_tokenizer
 
 
@@ -19,7 +20,6 @@ def prepare_environment() -> None:
     """Set environment defaults required before initializing CUDA or Unsloth."""
     if os.name != "nt":
         os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
-    os.environ.setdefault("CUDA_VISIBLE_DEVICES", "0")
     configured = os.environ.get("HACKGRADER_HF_HOME")
     if configured:
         os.environ.setdefault("HF_HOME", configured)
@@ -59,6 +59,8 @@ def load_dependencies() -> dict[str, Any]:
         ) from None
 
     disable_optional_time_limit()
+    if distributed.active():
+        torch.cuda.set_device(distributed.local_rank())
     return {
         "torch": torch,
         "Dataset": Dataset,
@@ -100,7 +102,7 @@ def prepare_model(dependencies: dict[str, Any], checkpoint_path: str | None = No
             "down_proj",
         ],
         lora_alpha=16,
-        lora_dropout=0,
+        lora_dropout=LORA_DROPOUT,
         bias="none",
         use_gradient_checkpointing=GRAD_CHECKPOINTING,
     )

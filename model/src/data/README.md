@@ -28,6 +28,13 @@ Each JSONL line is one object with:
 
 The shared [report contract](../../../src/contracts/README.md) governs the conversation and citations. Citations in a target must appear in the evidence view included in that same row.
 
+The assistant message is the whole report the prompt asks for, including the two
+`- Why this score:` lines. They name the sign that sets each number and the direction that
+would move it, because a target of three numbers and one sentence has nothing to reason
+with: the model can fit the score arithmetic from the measurements printed in the prompt and
+reach a near-zero loss without ever producing a justification. The parser does not require
+the lines, so a stored report without them stays readable.
+
 ## Lineage and split isolation
 
 Rows are connected when they share a canonical repository URL, rendered prompt, or source-group identifier. Source-group identifiers also record relationships such as content hashes, upstream problem groups, and synthetic/artifact ancestry. The splitter assigns each connected component to one partition; it does not split a repository into separate partitions just to meet a row quota.

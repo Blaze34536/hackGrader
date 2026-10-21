@@ -6,7 +6,7 @@ import time
 from types import SimpleNamespace
 from typing import Any
 
-from .. import config
+from .. import config, distributed
 from ..config import MAX_GATE_CANDIDATES, MAX_STEPS_PER_ROUND
 from ..resume import validate_resume_checkpoint
 from ..resume_fork import verify_fork_outputs
@@ -85,6 +85,26 @@ def prepare_checkpoint_run(
     )
 
 
+def _initialize_run_directory(
+    initialize: Any,
+    run_dir: str,
+    *,
+    forked_from: str | None = None,
+    timeout: float,
+) -> None:
+    """Create the run directory on the main worker and let other workers wait for it."""
+    if distributed.is_main():
+        if forked_from is None:
+            initialize(run_dir)
+        else:
+            initialize(run_dir, forked_from=forked_from)
+    distributed.await_path(
+        os.path.join(run_dir, "run_metadata.json"),
+        what="the run metadata",
+        timeout=timeout,
+    )
+
+
 def initialize_run(
     initialize: Any,
     *,
@@ -98,10 +118,17 @@ def initialize_run(
 ) -> tuple[float, float | None]:
     """Give new/forked training a fresh cap and existing-run resume its original cap."""
     if fork_checkpoint is not None:
-        initialize(run_dir, forked_from=fork_checkpoint)
+        _initialize_run_directory(
+            initialize,
+            run_dir,
+            forked_from=fork_checkpoint,
+            timeout=max(600.0, run_hours * 3600),
+        )
         return started_at + run_hours * 3600, run_hours * 3600
     if resume_checkpoint is None:
-        initialize(run_dir)
+        _initialize_run_directory(
+            initialize, run_dir, timeout=max(600.0, run_hours * 3600)
+        )
         return started_at + run_hours * 3600, run_hours * 3600
     verify_resume_outputs(run_dir, config.ADAPTER_DIR, config.MERGE_DIR, active)
     remaining = remaining_resume_budget(run_dir, run_hours, reserves)

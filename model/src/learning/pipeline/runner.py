@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from .. import config, runtime
+from .. import config, distributed, runtime
 from ..resume_runtime import active_input_paths
 from ..training import artifacts
 from . import final_test, release
@@ -67,7 +67,9 @@ def main(*, hooks: dict[str, Any], **options) -> None:
             fresh_repository_test=fresh_repository_test,
         )
     )
-    print(f"[i] This run writes checkpoints to {run_dir}")
+    distributed.rendezvous(what="the preflight check", timeout=3600.0)
+    if distributed.is_main():
+        print(f"[i] This run writes checkpoints to {run_dir}")
     if options.get("preflight_only", False):
         estimate(len(train_rows) * hooks.get("REPEAT", config.REPEAT))
         print("[i] Preflight passed; no model loaded and no training started.")

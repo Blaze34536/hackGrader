@@ -84,20 +84,41 @@ def render_report(
     quality_score: int,
     quality_deductions: list[str],
     summary: str,
+    *,
+    ai_reason: str = "",
+    quality_reason: str = "",
 ) -> str:
-    """Render a structured report in the shared judge report format."""
+    """Render a structured report in the shared judge report format.
+
+    The reasons are the ``- Why this score:`` lines the serving prompt asks the judge for.
+    A training target once carried only the numbers and one sentence, so the supervised
+    answer had nothing to reason with: the model could fit a score formula from the
+    measurements it was shown and reach a near-zero loss without producing a justification.
+    They are optional so a caller that holds no reasoning (an older stored report, a
+    fixture) still renders the same shape the parser accepts.
+    """
     ranked = ai_evidence[:8]
     evidence = "\n".join(
         f"Rank {index}: {entry}" for index, entry in enumerate(ranked, start=1)
     ) or "No AI-specific evidence found."
     deductions = "; ".join(quality_deductions[:4]) or "no deductions applied"
+    ai_line = _reason_line(ai_reason)
+    quality_line = _reason_line(quality_reason)
     return (
         f"1. AI Involvement Score (0-100%): {ai_score}%\n"
+        f"{ai_line}"
         f"Ranked AI evidence (strongest to weakest):\n{evidence}\n\n"
         f"2. Code Quality Score (0-100%): {quality_score}%\n"
+        f"{quality_line}"
         f"- Deductions: {deductions}\n\n"
         f"3. Summary & Notable Findings: {summary}"
     )
+
+
+def _reason_line(reason: str) -> str:
+    """Format one score's justification, or nothing when the caller holds none."""
+    text = (reason or "").strip()
+    return f"- Why this score: {text}\n" if text else ""
 
 
 def _entries(matches) -> list[str]:

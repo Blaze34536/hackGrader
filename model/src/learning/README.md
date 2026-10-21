@@ -51,6 +51,10 @@ uv run --project model --group dev ruff check model/src/learning
 
 `--fresh-repositories <file>` is a different option: it asks `train` to build a new candidate from the supplied repository list and requires `--fork-checkpoint`. The command implies strict gates and the fresh-repository-test filter. To inspect a built candidate without training, prefer running the data builder separately, then use `--dataset <candidate> --fork-checkpoint <checkpoint> --fresh-repository-test --strict-gates --preflight-only`.
 
+### Multi-GPU
+
+`train` defaults to `HACKGRADER_GPUS=auto`, which trains on every visible CUDA GPU when the platform provides NCCL; set it to a number to pin the worker count, or to `1` to stay on one GPU. The command relaunches itself under `torchrun` with one worker per GPU, and each worker holds a full 4-bit model replica, so the model has to fit on every GPU on its own. Worker 0 alone scores validation, spends the independent test, merges, and registers; the other workers train the same rounds and follow worker 0's plan and decision files in `outputs/<run-id>/workers/`, then exit once training ends. Because validation can run for hours, decisions travel through those files rather than through collectives. Gradient accumulation is divided by the worker count (down to one), so the optimizer batch matches a single-GPU run and the extra GPUs buy speed instead of a different learning problem. A single GPU, a platform without NCCL (including Windows), or `HACKGRADER_GPUS=1` trains on one GPU and prints why. `--preflight-only` and `--release-only` never relaunch, and `--fresh-repositories` builds its data before training, so that invocation is single-GPU.
+
 ## Evaluation and release sequence
 
 1. Preflight loads and verifies the selected dataset, split sizes, provenance, coverage, and output paths before GPU dependencies are loaded.
@@ -68,8 +72,9 @@ Values are read at process startup. The full defaults and cross-setting checks a
 | --- | --- |
 | Dataset inputs | `HACKGRADER_DATASET_FILE`, `HACKGRADER_TRAIN_FILE`, `HACKGRADER_VAL_FILE`, `HACKGRADER_TEST_FILE` |
 | Output paths | `HACKGRADER_OUTPUT_DIR`, `HACKGRADER_ADAPTER_DIR`, `HACKGRADER_MERGE_DIR`, `HACKGRADER_RUN_ID` |
-| Base model and budget | `HACKGRADER_BASE_MODEL`, `HACKGRADER_HOURS`, `HACKGRADER_MAX_STEPS_PER_ROUND`, `HACKGRADER_MAX_GATE_CANDIDATES` |
+| Base model and budget | `HACKGRADER_BASE_MODEL`, `HACKGRADER_HOURS`, `HACKGRADER_MAX_STEPS_PER_ROUND`, `HACKGRADER_MAX_GATE_CANDIDATES`, `HACKGRADER_GPUS` |
 | Runtime and tokens | `HACKGRADER_BATCH`, `HACKGRADER_ACCUM`, `HACKGRADER_MAX_LEN`, `HACKGRADER_ASSISTANT_ONLY_LOSS` |
+| Training dynamics | `HACKGRADER_LORA_LR`, `HACKGRADER_LORA_DROPOUT`, `HACKGRADER_WEIGHT_DECAY` |
 | Evaluation size | `HACKGRADER_CHECK_ROWS`, `HACKGRADER_MIN_TEST_ROWS`, `HACKGRADER_MIN_TEST_CLASS_ROWS` |
 | Release gates | `HACKGRADER_TEST_MIN_PRECISION`, `HACKGRADER_TEST_MIN_RECALL`, `HACKGRADER_TEST_MIN_SPECIFICITY`, `HACKGRADER_HOLDOUT_MAE_LIMIT`, `HACKGRADER_MIN_HOLDOUT_SPREAD`, `HACKGRADER_MIN_HOLDOUT_SEPARATION` |
 
@@ -91,6 +96,7 @@ Values are read at process startup. The full defaults and cross-setting checks a
 | `__init__.py` | Adds the shared `contracts` source path so the package can import it. |
 | `config.py` | Configures fine-tuning, evaluation sizes, outputs, and release checks. |
 | `config_validation.py` | Validates training, data, and release-gate configuration values. |
+| `distributed.py` | Launches the torchrun job and shares worker 0's round plans and decisions. |
 | `inputs.py` | Prepares model-visible conversations and proves assistant-only training loss. |
 | `runtime.py` | Loads GPU dependencies only after training data has passed preflight checks. |
 | `resume.py` | Validates and scores saved adapters before restarting a training process. |

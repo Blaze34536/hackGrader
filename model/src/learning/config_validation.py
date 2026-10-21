@@ -102,6 +102,10 @@ def validate_config(settings: dict[str, object]) -> None:
         raise ValueError("validation class minimum cannot be below MIN_TEST_CLASS_ROWS")
     if settings["LORA_LR"] <= 0:
         raise ValueError("the LoRA learning rate must be positive")
+    if not 0 <= settings["LORA_DROPOUT"] < 1:
+        raise ValueError("the LoRA dropout must be at least 0 and below 1")
+    if settings["WEIGHT_DECAY"] < 0:
+        raise ValueError("the weight decay cannot be negative")
     if (
         settings["MIN_ADAPTIVE_LR"] <= 0
         or settings["MIN_ADAPTIVE_LR"] > settings["LORA_LR"]

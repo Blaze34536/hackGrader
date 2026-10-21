@@ -117,7 +117,9 @@ MIN_VALIDATION_BOUNDARY_CLASS_ROWS = int(
 MIN_GENERATED_TEST_BOUNDARY_CLASS_ROWS = int(
     os.environ.get("HACKGRADER_MIN_DATA_TEST_BOUNDARY_CLASS_ROWS", "0")
 )
-LORA_LR = float(os.environ.get("HACKGRADER_LORA_LR", "1e-4"))
+LORA_LR = float(os.environ.get("HACKGRADER_LORA_LR", "5e-5"))
+LORA_DROPOUT = float(os.environ.get("HACKGRADER_LORA_DROPOUT", "0.05"))
+WEIGHT_DECAY = float(os.environ.get("HACKGRADER_WEIGHT_DECAY", "0.01"))
 MIN_ADAPTIVE_LR = float(os.environ.get("HACKGRADER_MIN_ADAPTIVE_LR", str(LORA_LR / 10)))
 SWEEP_CHECKPOINTS = os.environ.get("HACKGRADER_SWEEP_CHECKPOINTS", "1") == "1"
 SWEEP_ROWS = int(os.environ.get("HACKGRADER_SWEEP_ROWS", "0"))

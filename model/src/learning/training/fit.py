@@ -1,10 +1,10 @@
 """Configure and run bounded supervised fine-tuning rounds."""
 
 import inspect
-import os
 import time
 from typing import Any
 
+from .. import distributed
 from ..config import (
     ACCUM,
     EPOCHS,
@@ -14,6 +14,7 @@ from ..config import (
     MICRO_BATCH,
     OPTIM,
     RUN_DIR,
+    WEIGHT_DECAY,
 )
 from ..inputs import build_collator
 from .artifacts import configure_evaluation, require_time_remaining
@@ -75,15 +76,26 @@ def _configuration(
         )
 
     bf16 = torch.cuda.is_bf16_supported()
+    accumulation = ACCUM
+    if distributed.active():
+        # Keep the optimizer batch equal to the single-GPU batch: extra workers buy
+        # speed, not a silently different learning problem.
+        accumulation = max(1, ACCUM // distributed.world_size())
+        if distributed.is_main():
+            print(
+                f"[i] {distributed.world_size()} workers; gradient accumulation "
+                f"{accumulation} (single-GPU value {ACCUM})."
+            )
     return config_type(
         **sft_fields,
         do_train=True,
         per_device_train_batch_size=MICRO_BATCH,
         per_device_eval_batch_size=1,
-        gradient_accumulation_steps=ACCUM,
+        gradient_accumulation_steps=accumulation,
         num_train_epochs=EPOCHS,
         warmup_ratio=0.05,
         learning_rate=learning_rate,
+        weight_decay=WEIGHT_DECAY,
         lr_scheduler_type="cosine",
         optim=OPTIM,
         fp16=not bf16,
@@ -121,7 +133,7 @@ def train_model(
         raise ValueError("learning_rate must be positive")
     if not round_output_dir:
         raise ValueError("round_output_dir is required to isolate round checkpoints")
-    os.makedirs(round_output_dir, exist_ok=False)
+    distributed.prepare_round_directory(round_output_dir, timeout=3600.0)
 
     torch = dependencies["torch"]
     config = _configuration(
@@ -153,7 +165,8 @@ def train_model(
 
     from .artifacts import report_training_rate
 
-    report_training_rate(trainer)
+    if distributed.is_main():
+        report_training_rate(trainer)
     if trainer.state.global_step <= 0:
         raise SystemExit(
             "[!] The trainer completed no optimizer steps; deployment stopped."
