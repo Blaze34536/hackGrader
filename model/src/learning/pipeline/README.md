@@ -27,7 +27,7 @@ Optimizer loops, checkpoint selection, budgets, callbacks, and recovery live in 
 ## Execution order
 
 1. Inputs and output destinations are checked before the GPU runtime loads.
-2. A normal run estimates its budget and initializes fresh output directories; resumes and forks validate their source checkpoint and preserve it.
+2. A normal run estimates its budget, initializes fresh output directories, and records the data files it trains on in `run_metadata.json`; resumes and forks validate their source checkpoint and preserve it.
 3. Training data is prepared, then bounded rounds train and score candidates against validation.
 4. Validation chooses continuation and release candidates. The independent test remains unavailable to training and ordinary diagnostics.
 5. The gated release path can score the selected candidate once on the independent test. A failed gate blocks normal merge and Ollama registration.

@@ -30,6 +30,21 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _restore_inputs(options, inputs: tuple[str, ...]) -> None:
+    """Resume on the data the run recorded unless the caller chose data explicitly."""
+    if options.dataset or options.candidates or any(
+        (options.train_file, options.validation_file, options.test_file)
+    ):
+        return
+    if len(inputs) == 1:
+        options.dataset = inputs[0]
+    elif len(inputs) == 3:
+        options.train_file, options.validation_file, options.test_file = inputs
+    else:
+        return
+    print(f"[i] resuming with the run's recorded inputs: {list(inputs)}")
+
+
 def _train_parser() -> argparse.ArgumentParser:
     """Build training options for selecting one combined dataset or separate files."""
     parser = argparse.ArgumentParser(
@@ -91,6 +106,19 @@ def _train_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="validate inputs and output paths, then exit before model loading or training",
     )
+    parser.add_argument(
+        "--continue-run",
+        dest="continue_run",
+        action="store_true",
+        help=(
+            "inspect the selected or newest run and resume it, rebuild an interrupted "
+            "release, or report that nothing is left to do"
+        ),
+    )
+    parser.add_argument(
+        "--run-id",
+        help="run to continue with --continue-run (default: newest run)",
+    )
     return parser
 
 
@@ -134,6 +162,18 @@ def main(argv: Sequence[str] | None = None) -> int:
             train_parser.error("--release-only requires --fork-checkpoint")
         if options.release_only and options.preflight_only:
             train_parser.error("--release-only cannot be combined with --preflight-only")
+        if options.continue_run and (
+            options.resume_checkpoint
+            or options.fork_checkpoint
+            or options.release_only
+            or options.fresh_repositories
+        ):
+            train_parser.error(
+                "--continue-run cannot be combined with --resume-checkpoint, "
+                "--fork-checkpoint, --release-only, or --fresh-repositories"
+            )
+        if options.run_id and not options.continue_run:
+            train_parser.error("--run-id requires --continue-run")
         if options.fresh_repositories and (
             options.dataset or any(explicit_files) or options.release_only
         ):
@@ -152,6 +192,32 @@ def main(argv: Sequence[str] | None = None) -> int:
             train_parser.error(
                 "provide all three of --train-file, --validation-file, and --test-file"
             )
+
+        if options.continue_run:
+            from learning import continuation
+
+            decision = continuation.plan(options.run_id)
+            print(decision.message)
+            if decision.action == "resume":
+                options.resume_checkpoint = decision.checkpoint
+                _restore_inputs(options, decision.inputs)
+                explicit_files = (
+                    options.train_file,
+                    options.validation_file,
+                    options.test_file,
+                )
+            elif decision.action == "recover":
+                if options.preflight_only:
+                    print(
+                        "[i] preflight: the release would be rebuilt; nothing was "
+                        "merged, converted, or registered."
+                    )
+                    return decision.code
+                from learning.pipeline.merge_recovery import main as recover_release
+
+                return recover_release(["--run-id", decision.run_id])
+            else:
+                return decision.code
 
         from learning import distributed
 

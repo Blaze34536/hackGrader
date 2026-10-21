@@ -39,8 +39,13 @@ def require_time_remaining(deadline: float | None, phase: str) -> None:
         raise RunDeadlineExceeded(f"the {phase} deadline was reached")
 
 
-def initialize_run_directory(path: str, *, forked_from: str | None = None) -> None:
-    """Create a fresh run folder and record its stride and optional source checkpoint."""
+def initialize_run_directory(
+    path: str,
+    *,
+    forked_from: str | None = None,
+    inputs: tuple[str, ...] | None = None,
+) -> None:
+    """Create a fresh run folder and record its stride, inputs, and fork source."""
     parent = os.path.dirname(path)
     if parent:
         os.makedirs(parent, exist_ok=True)
@@ -51,6 +56,8 @@ def initialize_run_directory(path: str, *, forked_from: str | None = None) -> No
         "base_model": BASE_MODEL,
         "max_len": MAX_LEN,
     }
+    if inputs:
+        metadata["inputs"] = list(inputs)
     if forked_from is not None:
         run_parent = os.path.dirname(os.path.abspath(path)) or "."
         metadata["forked_from"] = os.path.relpath(forked_from, run_parent)

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from .recovery_evidence import (
@@ -28,6 +28,7 @@ from .recovery_paths import (
     RunPaths,
     adapter_digest,
     configured_paths,
+    recorded_dataset,
     resolve_paths,
     validate_run_id,
 )
@@ -75,6 +76,9 @@ def plan_recovery(
     """Verify a recoverable interrupted release and describe what would be rebuilt."""
     run_id = validate_run_id(run_id)
     paths = resolve_paths(settings or configured_paths(run_id), root)
+    paths = replace(
+        paths, dataset=recorded_dataset(paths.run_dir, paths.dataset, root)
+    )
     digest = digest or adapter_digest
     compare = compare or compare_adapters
     count_rows = count_rows or count_training_rows

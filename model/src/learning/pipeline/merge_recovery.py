@@ -30,6 +30,7 @@ import os
 from collections.abc import Callable, Sequence
 from typing import Any
 
+from ..continuation import newest_claimed_run
 from .recovery_outputs import (
     record_evidence,
     report_plan,
@@ -133,8 +134,10 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--run-id",
-        required=True,
-        help="the interrupted run id, for example 20261008-193038",
+        help=(
+            "the interrupted run id, for example 20261008-193038; defaults to the "
+            "newest run that claimed its independent test"
+        ),
     )
     parser.add_argument(
         "-n",
@@ -148,7 +151,16 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     """Pin the interrupted run id, then rebuild its merge and deployment."""
     options = _parser().parse_args(argv)
-    run_id = validate_run_id(options.run_id)
+    run_id = options.run_id
+    if run_id is None:
+        run_id = newest_claimed_run()
+        if run_id is None:
+            raise SystemExit(
+                "[!] No run has claimed an independent test, so there is no release to "
+                "rebuild. Use `train --continue-run` for an unfinished training run."
+            )
+        print(f"[i] no --run-id given; rebuilding the newest claimed run {run_id}.")
+    run_id = validate_run_id(run_id)
     os.environ["HACKGRADER_RUN_ID"] = run_id
     if options.dry_run:
         print("[i] dry run: no model, merge, conversion, or registration will run.")

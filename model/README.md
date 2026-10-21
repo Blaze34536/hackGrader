@@ -47,7 +47,7 @@ HACKGRADER_RUN_ID=<run-id> uv run src/cli.py deploy --check   # verifies the ser
 uv run src/cli.py score -r outputs/<run-id> --all-checkpoints # optional: validation scores per checkpoint
 ```
 
-If the run stops before the independent test is claimed, continue it with `train --resume-checkpoint <checkpoint>`. If it stops after the test is claimed — for example during the merge — do not start a new run: the test is single-use, so `recover --run-id <run-id>` rebuilds only the merge, conversion, and registration from the adapter the run already saved.
+If a run stops for any reason, `uv run src/cli.py train --continue-run` reads the newest run that has something to continue (or `--run-id`) and takes the one safe action: it resumes training when the independent test is unclaimed and the original cap has time left, rebuilds only the merge and registration when the test was claimed and passed but the release never finished, reports a run that is already released, and otherwise explains why the run cannot continue. A run that stopped before its first checkpoint is skipped, and a resume replays the data files that run recorded unless you name data yourself. Add `--preflight-only` to see the decision without loading a model. `train --resume-checkpoint <checkpoint>` and `recover` still work when you want to name the checkpoint or run yourself; `recover` without `--run-id` picks the newest run that claimed its test.
 
 ## Command reference
 
@@ -63,6 +63,7 @@ Run from `model/`. Use `uv run src/cli.py <command> -h` for complete options.
 | Show data-builder options | `uv run src/cli.py data -h` |
 | Validate inputs and paths without training | `uv run src/cli.py train --preflight-only` |
 | Train with the configured candidate | `uv run src/cli.py train` |
+| Continue whatever the newest run needs | `uv run src/cli.py train --continue-run` |
 | Resume the original run and time cap | `uv run src/cli.py train --resume-checkpoint outputs/<run>/round-01/checkpoint-250` |
 | Fork a checkpoint into a new run | `uv run src/cli.py train --fork-checkpoint outputs/<run>/round-01/checkpoint-250` |
 | Release a fork without an optimizer round | `uv run src/cli.py train --fork-checkpoint <checkpoint> --release-only` |
@@ -70,8 +71,8 @@ Run from `model/`. Use `uv run src/cli.py <command> -h` for complete options.
 | Compare saved checkpoints on validation | `uv run src/cli.py score -r outputs/<run-id> --all-checkpoints` |
 | Preview deployment commands | `uv run src/cli.py deploy --dry-run` |
 | Verify the configured Ollama model artifact | `uv run src/cli.py deploy --check` |
-| Preview a rebuild of an interrupted release | `uv run src/cli.py recover --run-id <run-id> --dry-run` |
-| Rebuild an interrupted release | `uv run src/cli.py recover --run-id <run-id>` |
+| Preview a rebuild of an interrupted release | `uv run src/cli.py recover --dry-run` |
+| Rebuild an interrupted release | `uv run src/cli.py recover` |
 
 The model-side learning and training-data suites are no longer part of the repository, so changes here are verified through the application contracts under `tests/` instead. The workspace can still be linted from the repository root:
 
@@ -89,7 +90,7 @@ uv run --project model --group dev ruff check model/src
 
 The default total run cap is 20 hours, including reserved validation, final-test, and release time. Each optimizer round is capped at 500 steps by default. Generated teaching-label agreement does not establish real-world authorship accuracy.
 
-A machine that loses power between the selected-adapter save and the merged-weight write leaves a run that cannot simply be restarted: the one-time independent test is already claimed, so `train` refuses to score it again. `recover --run-id <run-id>` finishes that run instead. It never re-scores the reserve test; it rebuilds only the merge, conversion, and registration from the adapter and validation diagnostics the run already wrote, and it refuses unless the saved adapter postdates the claim and still matches the recovered checkpoint tensor by tensor. The build records its own provenance in `merge_recovery.json` beside the merged weights.
+A machine that loses power between the selected-adapter save and the merged-weight write leaves a run that cannot simply be restarted: the one-time independent test is already claimed, so `train` refuses to score it again. `recover` finishes that run instead, choosing the newest claimed run unless `--run-id` names another. It never re-scores the reserve test; it rebuilds only the merge, conversion, and registration from the adapter and validation diagnostics the run already wrote, and it refuses unless the saved adapter postdates the claim and still matches the recovered checkpoint tensor by tensor. The build records its own provenance in `merge_recovery.json` beside the merged weights.
 
 ## Where artifacts land
 
@@ -99,7 +100,7 @@ Training writes two trees, and the split is deliberate: `outputs/` is the run's 
 
 | Path | Written when | Contents | Size |
 | --- | --- | --- | --- |
-| `outputs/<run-id>/run_metadata.json` | run start | base model, max length, step cap, start time, and `forked_from` for a fork | small |
+| `outputs/<run-id>/run_metadata.json` | run start | base model, max length, step cap, start time, the data files the run trains on, and `forked_from` for a fork | small |
 | `outputs/<run-id>/round-<NN>/checkpoint-<N>/` | each evaluation point | the PEFT adapter for that step, its tokenizer, and `trainer_state.json`; a checkpoint is resumable, not a standalone model | about 280 MB |
 | `outputs/<run-id>/validation-checkpoint-<N>.jsonl` | each validation scoring with row predictions | per-row gate evidence and generated responses; a repeat gets `-02`, then `-03` | a few MB |
 | `outputs/<run-id>/.independent-test-attempted/` | immediately before the final test | an empty directory used as an atomic claim; its presence is what refuses a second attempt | — |

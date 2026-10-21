@@ -8,6 +8,7 @@ from typing import Any
 
 from .. import config, distributed
 from ..config import MAX_GATE_CANDIDATES, MAX_STEPS_PER_ROUND
+from ..continuation import ATTEMPT_MARKER
 from ..resume import validate_resume_checkpoint
 from ..resume_fork import verify_fork_outputs
 from ..resume_outputs import verify_resume_outputs
@@ -54,11 +55,19 @@ def prepare_checkpoint_run(
     continuation = resume_checkpoint or fork_checkpoint
     if resume_checkpoint is not None:
         continuation, run_dir = resolve_resume_run(resume_checkpoint, run_dir)
+        if os.path.isdir(
+            os.path.join(checkpoint_run_dir(continuation), ATTEMPT_MARKER)
+        ):
+            raise SystemExit(
+                "[!] This run already claimed its one-time independent test, so "
+                "resuming would spend GPU time only for the test to refuse to run "
+                "again. Use `train --continue-run` to finish an interrupted release, "
+                "or start a separate run with `train --fork-checkpoint <checkpoint>`."
+            )
     elif fork_checkpoint is not None:
         fork_checkpoint = validate_resume_checkpoint(fork_checkpoint)
         if release_only:
             from ..resume_outputs import verify_resume_outputs
-            from ..scoring.discovery import checkpoint_run_dir
 
             verify_resume_outputs(
                 checkpoint_run_dir(fork_checkpoint),
@@ -89,15 +98,13 @@ def _initialize_run_directory(
     initialize: Any,
     run_dir: str,
     *,
+    inputs: tuple[str, ...],
     forked_from: str | None = None,
     timeout: float,
 ) -> None:
     """Create the run directory on the main worker and let other workers wait for it."""
     if distributed.is_main():
-        if forked_from is None:
-            initialize(run_dir)
-        else:
-            initialize(run_dir, forked_from=forked_from)
+        initialize(run_dir, forked_from=forked_from, inputs=inputs)
     distributed.await_path(
         os.path.join(run_dir, "run_metadata.json"),
         what="the run metadata",
@@ -121,13 +128,17 @@ def initialize_run(
         _initialize_run_directory(
             initialize,
             run_dir,
+            inputs=active,
             forked_from=fork_checkpoint,
             timeout=max(600.0, run_hours * 3600),
         )
         return started_at + run_hours * 3600, run_hours * 3600
     if resume_checkpoint is None:
         _initialize_run_directory(
-            initialize, run_dir, timeout=max(600.0, run_hours * 3600)
+            initialize,
+            run_dir,
+            inputs=active,
+            timeout=max(600.0, run_hours * 3600),
         )
         return started_at + run_hours * 3600, run_hours * 3600
     verify_resume_outputs(run_dir, config.ADAPTER_DIR, config.MERGE_DIR, active)

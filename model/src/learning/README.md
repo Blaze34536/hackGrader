@@ -43,7 +43,8 @@ uv run --project model --group dev ruff check model/src/learning
 | Mode | Behavior |
 | --- | --- |
 | `--preflight-only` | Validates inputs and output destinations, reports a run estimate, and exits before model loading. It does not train, score the independent test, merge, or deploy. |
-| `--resume-checkpoint` | Continues inside the original run and its remaining time cap. |
+| `--continue-run` | Inspects the selected or newest run and takes the one safe action: resume training, rebuild an interrupted release, report an already-released run, or explain why it cannot continue. Without `--run-id` it skips runs that saved no checkpoint or claimed no test. A resume reuses the data files recorded in the run's metadata unless the command names data. `--preflight-only` reports the decision without loading a model. |
+| `--resume-checkpoint` | Continues inside the original run and its remaining time cap. It refuses a run whose independent test was already claimed; use `--continue-run` or `recover` for that. |
 | `--fork-checkpoint` | Creates a separate run and time cap from a saved adapter while preserving the source run. It may train unless paired with `--release-only`. |
 | `--release-only` | On a fork, evaluates saved candidates and performs the release sequence without an optimizer round. It is not a no-op: it may load a model and score holdouts. |
 | `--strict-gates` | Disables provisional release and stops when adaptive validation tuning bottoms out. It does not weaken release requirements. |
@@ -96,6 +97,8 @@ Values are read at process startup. The full defaults and cross-setting checks a
 | `__init__.py` | Adds the shared `contracts` source path so the package can import it. |
 | `config.py` | Configures fine-tuning, evaluation sizes, outputs, and release checks. |
 | `config_validation.py` | Validates training, data, and release-gate configuration values. |
+| `continuation.py` | Chooses the one safe next action for a run: resume, rebuild the release, report it done, or explain why not. |
+| `run_artifacts.py` | Reads a run's claim marker, checkpoints, selection, adapter, stamp, and recorded inputs from disk. |
 | `distributed.py` | Launches the torchrun job and shares worker 0's round plans and decisions. |
 | `inputs.py` | Prepares model-visible conversations and proves assistant-only training loss. |
 | `runtime.py` | Loads GPU dependencies only after training data has passed preflight checks. |

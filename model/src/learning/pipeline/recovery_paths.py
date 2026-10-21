@@ -95,6 +95,24 @@ def resolve_paths(paths: RunPaths, root: str) -> RunPaths:
     )
 
 
+def recorded_dataset(run_dir: str, fallback: str, root: str) -> str:
+    """Prefer the dataset a run recorded, so a recovery counts the rows it trained on."""
+    metadata_path = os.path.join(run_dir, "run_metadata.json")
+    try:
+        with open(metadata_path, encoding="utf-8") as handle:
+            recorded = json.load(handle).get("inputs")
+    except (OSError, AttributeError, json.JSONDecodeError):
+        return fallback
+    files: list[str] = []
+    if isinstance(recorded, list):
+        files = [path for path in recorded if isinstance(path, str)]
+    files = [path for path in files if path != "Modelfile"]
+    if len(files) != 1:
+        return fallback
+    path = files[0] if os.path.isabs(files[0]) else os.path.join(root, files[0])
+    return os.path.normpath(path)
+
+
 def run_started_at(run_dir: str) -> float:
     """Read the run's original start time from its metadata."""
     metadata_path = os.path.join(run_dir, "run_metadata.json")
