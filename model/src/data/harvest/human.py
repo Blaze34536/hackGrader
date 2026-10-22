@@ -19,6 +19,7 @@ License: MIT
 
 from __future__ import annotations
 
+import urllib.parse
 from datetime import date, datetime
 
 from repositories.urls import parse_github_url
@@ -148,7 +149,42 @@ def read_url_list(path: str) -> list[str]:
 
 __all__ = [
     "COMMIT_SAMPLE",
+    "SEARCH_LANGUAGES",
     "read_url_list",
+    "search_human_candidates",
     "verify_human_repositories",
     "verify_human_repository",
 ]
+
+
+# The languages the agent cohort is mostly written in, so the human class is not told apart
+# by language alone.
+SEARCH_LANGUAGES = ("python", "javascript", "typescript", "go", "java")
+
+
+def search_human_candidates(
+    client: GithubClient,
+    *,
+    before: str,
+    limit: int,
+    languages: tuple[str, ...] = SEARCH_LANGUAGES,
+) -> list[str]:
+    """Return repository URLs last pushed before ``before``, as human-class candidates.
+
+    The newest-pushed come first, so the human class is as close in time to the agent cohort
+    as the protocol allows; every candidate still has to pass ``verify_human_repository``.
+    """
+    per_language = -(-limit // max(1, len(languages)))
+    urls: list[str] = []
+    for language in languages:
+        query = f"pushed:<{before} language:{language} stars:>=10 fork:false"
+        payload = client.get(
+            f"{API_ROOT}/search/repositories?q={urllib.parse.quote(query)}"
+            f"&sort=updated&order=desc&per_page={min(100, per_language)}"
+        )
+        items = payload.get("items", []) if isinstance(payload, dict) else []
+        for item in items[:per_language]:
+            url = str(item.get("html_url") or "")
+            if url and not item.get("fork") and url not in urls:
+                urls.append(url)
+    return urls[:limit]

@@ -25,6 +25,10 @@ DEFAULT_TRAIN = f"{DATA_DIR}/dataset.jsonl"
 DEFAULT_VAL = f"{DATA_DIR}/dataset.val.jsonl"
 DEFAULT_TEST = f"{DATA_DIR}/dataset.test.jsonl"
 DEFAULT_CANDIDATE = f"{DATA_DIR}/dataset.candidate.jsonl"
+# Human-bias benchmark repositories, held out of every partition and never harvested.
+BENCHMARK_REPOS_FILE = os.environ.get(
+    "HACKGRADER_BENCHMARK_REPOS", f"{DATA_DIR}/benchmark_repos.txt"
+)
 DEFAULT_TRAIN_CANDIDATE = f"{DATA_DIR}/dataset.train.candidate.jsonl"
 DEFAULT_VAL_CANDIDATE = f"{DATA_DIR}/dataset.val.candidate.jsonl"
 DEFAULT_TEST_CANDIDATE = f"{DATA_DIR}/dataset.test.candidate.jsonl"

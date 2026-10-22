@@ -14,6 +14,9 @@ from typing import Any
 from ..validation import canonical_source_url, validate_row
 from .bands import _CLASS_LABELS, _SCORE_BANDS, class_labels, score_band
 
+# Mean-target bands for stratifying holdouts, highest first: human, mostly human, mixed, AI.
+_STRATUM_BANDS = ((60, "60-100"), (40, "40-59"), (10, "10-39"), (0, "0-9"))
+
 
 def _components(rows: list[dict[str, Any]]) -> list[list[int]]:
     """Group rows sharing URLs, source lineage, or rendered prompts."""
@@ -79,6 +82,13 @@ class ComponentProfile:
     def has_repository(self) -> bool:
         """Return whether the component carries independent real-repository rows."""
         return bool(self.repositories)
+
+    @property
+    def stratum(self) -> tuple[str, str]:
+        """Return the source family and mean-target band a holdout must mirror."""
+        mean = sum(self.prompts.values()) / max(1, len(self.prompts))
+        band = next(label for low, label in _STRATUM_BANDS if mean >= low)
+        return "+".join(sorted(self.types)), band
 
 
 def prompt_scores(rows: list[dict[str, Any]], report_contract: Any) -> dict[str, int]:

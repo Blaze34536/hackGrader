@@ -19,6 +19,7 @@ from learning.preflight import resolve_candidate_paths
 
 from ..config import (
     AIG_ROWS,
+    BENCHMARK_REPOS_FILE,
     DEFAULT_CANDIDATE,
     DEFAULT_TEST_CANDIDATE,
     DEFAULT_TRAIN_CANDIDATE,
@@ -49,6 +50,14 @@ def _parser() -> argparse.ArgumentParser:
         help=(
             "JSONL manifest of fail-closed verified repository authorship labels; "
             "repositories without an accepted label are excluded"
+        ),
+    )
+    parser.add_argument(
+        "--exclude-repositories",
+        default=BENCHMARK_REPOS_FILE,
+        help=(
+            "file of repository URLs held out of every partition, so the human-bias "
+            f"benchmark stays independent; '' keeps them (default: {BENCHMARK_REPOS_FILE})"
         ),
     )
     parser.add_argument(

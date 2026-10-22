@@ -17,11 +17,14 @@ License: MIT
 from __future__ import annotations
 
 import argparse
+import os
 import time
+from collections import Counter
 from datetime import date, timedelta
 from typing import Any
 
 from ..config import (
+    BENCHMARK_REPOS_FILE,
     HARVEST_BUDGET,
     HARVEST_COHORT_FILE,
     HARVEST_HUMAN_BEFORE,
@@ -29,12 +32,20 @@ from ..config import (
     HARVEST_PAUSE_SECONDS,
     HARVEST_TOUCH_WINDOW,
 )
+from ..splitting.exclusion import read_repository_list
+from ..validation import canonical_source_url
 from .agents import AGENT_SLUGS, AgentApp, agent_for_slug
+from .bands import AI_BANDS, HUMAN, entry_band
 from .budget import RequestBudget
 from .client import GithubClient, GithubError, RateLimited, github_token
-from .cohort import HarvestSummary, harvest, language_of
-from .human import COMMIT_SAMPLE, read_url_list, verify_human_repositories
-from .manifest import AUDITOR, derive_entries, report, write_manifest
+from .cohort import HarvestSummary, band_counts, harvest, language_of
+from .human import (
+    COMMIT_SAMPLE,
+    read_url_list,
+    search_human_candidates,
+    verify_human_repositories,
+)
+from .manifest import AUDITOR, balance_entries, derive_entries, report, write_manifest
 from .queries import month_windows, partition_query
 from .records import CohortStore, read_cohort, write_provenance
 
@@ -101,6 +112,25 @@ def _parser() -> argparse.ArgumentParser:
         "--human-repositories",
         default=None,
         help="file of repository URLs to verify as the human class (for example data/repos.fresh.txt)",
+    )
+    parser.add_argument(
+        "--human-search",
+        type=int,
+        default=0,
+        help=(
+            "human-class candidates to find by repository search, last pushed before "
+            "--human-before, verified like --human-repositories (default: 0)"
+        ),
+    )
+    parser.add_argument(
+        "--band-goal",
+        type=int,
+        default=None,
+        help=(
+            "repositories wanted in each AI band (10-40%% and 50%%+ attributed); the harvest "
+            "stops once every band holds it, and the manifest keeps at most this many per "
+            "band, human included; replaces --max-repositories as the goal (default: off)"
+        ),
     )
     parser.add_argument(
         "--human-before",
@@ -258,11 +288,21 @@ def _reset_wait(
 def _verify_humans(
     args, store: CohortStore, client: GithubClient
 ) -> list[tuple[str, str]]:
-    """Verify the listed human-class repositories once, skipping what the cohort holds."""
+    """Verify the listed and searched human-class repositories once, skipping what the cohort holds."""
     cohort = read_cohort(store.path)
-    urls = read_url_list(args.human_repositories)
+    urls = read_url_list(args.human_repositories) if args.human_repositories else []
+    if args.human_search:
+        found = search_human_candidates(
+            client, before=args.human_before, limit=args.human_search
+        )
+        print(f"[i] repository search proposed {len(found)} human-class candidate(s)")
+        urls += [url for url in found if url not in urls]
+    held_out = read_repository_list(BENCHMARK_REPOS_FILE) if os.path.exists(
+        BENCHMARK_REPOS_FILE
+    ) else set()
+    urls = [url for url in urls if canonical_source_url(url) not in held_out]
     fresh = [url for url in urls if url not in cohort.urls() or args.refresh]
-    print(f"[i] verifying {len(fresh)} human-class candidate(s) from {args.human_repositories}")
+    print(f"[i] verifying {len(fresh)} human-class candidate(s)")
     records, rejections = verify_human_repositories(
         client, fresh, cutoff=args.human_before, sample=args.human_sample
     )
@@ -298,6 +338,8 @@ def _pass_record(
         "human_repositories": args.human_repositories or "",
         "human_before": args.human_before,
         "human_sample": args.human_sample,
+        "human_search": args.human_search,
+        "band_goal": args.band_goal,
         "authenticated": authenticated,
         "stopped": summary.stopped,
         "partitions": [item.to_dict() for item in summary.partitions],
@@ -359,12 +401,17 @@ def main(argv: list[str] | None = None) -> int:
                 window=args.touch_window,
                 max_files=args.max_files_per_repository,
                 refresh=args.refresh,
+                band_goal=args.band_goal,
             )
             cohort = read_cohort(store.path)
             passes.append(
                 (pass_number if args.resume_to_goal else None, summary, budget, cohort)
             )
-            reached = len(cohort.repositories) >= args.max_repositories
+            reached = (
+                all(count >= args.band_goal for count in band_counts(cohort.repositories).values())
+                if args.band_goal is not None
+                else len(cohort.repositories) >= args.max_repositories
+            )
             if not args.resume_to_goal or reached:
                 break
             if summary.retry_after is None and len(cohort.repositories) <= before:
@@ -390,7 +437,7 @@ def main(argv: list[str] | None = None) -> int:
 
     human_rejections: list[tuple[str, str]] = []
     human_budget: RequestBudget | None = None
-    if args.human_repositories:
+    if args.human_repositories or args.human_search:
         if args.resume_to_goal:
             client, human_budget = _client_for(args, token)
         try:
@@ -473,6 +520,14 @@ def main(argv: list[str] | None = None) -> int:
         entries, dropped = derive_entries(
             cohort, audited_by=args.audited_by, audited_at=date.today().isoformat()
         )
+        if args.band_goal is not None:
+            entries, unbalanced = balance_entries(entries, goal=args.band_goal)
+            counts = Counter(entry_band(entry) for entry in entries)
+            print(
+                "[i] balanced manifest: "
+                + ", ".join(f"{band} {counts[band]}" for band in (*AI_BANDS, HUMAN))
+                + f" (goal {args.band_goal} each); {len(unbalanced)} entr(ies) left out"
+            )
         path = write_manifest(args.labels_out, entries)
         manifest = report(path, entries)
         for url, reason in dropped:

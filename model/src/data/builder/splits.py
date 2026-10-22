@@ -42,6 +42,7 @@ from ..config import (
 )
 from ..rows import cap_targets, distinct, quarantine_conflicting_prompts
 from ..splitting import split_by_source_with_test
+from ..splitting.exclusion import exclude_repositories
 from ..verification import verify_splits
 
 
@@ -141,7 +142,8 @@ def split_candidate_rows(
 def split_rows(
     rows: list[dict[str, Any]], args, rng: random.Random
 ) -> tuple[list[dict], list[dict], list[dict]]:
-    """Quarantine target conflicts globally, deduplicate, cap, split, and gate."""
+    """Hold out benchmarks, quarantine target conflicts, deduplicate, cap, split, and gate."""
+    rows = exclude_repositories(rows, getattr(args, "exclude_repositories", None))
     rows, quarantined = quarantine_conflicting_prompts(rows)
     if quarantined:
         print(

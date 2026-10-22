@@ -77,7 +77,9 @@ def _configuration(
 
     bf16 = torch.cuda.is_bf16_supported()
     accumulation = ACCUM
+    ddp = {}
     if distributed.active():
+        ddp = {"ddp_find_unused_parameters": False}
         # Keep the optimizer batch equal to the single-GPU batch: extra workers buy
         # speed, not a silently different learning problem.
         accumulation = max(1, ACCUM // distributed.world_size())
@@ -110,6 +112,7 @@ def _configuration(
         dataloader_pin_memory=False,
         **evaluation,
         **packing,
+        **ddp,
     )
 
 

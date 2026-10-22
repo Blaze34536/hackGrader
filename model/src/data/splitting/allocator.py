@@ -249,9 +249,33 @@ class ComponentAllocator:
                 return requirement
         return order[-1]
 
+    def stratify(self, destination: str, fraction: float) -> None:
+        """Give one holdout its proportional share of every stratum before any quota.
+
+        The quota loop alone picks the component that pays off the most deficits, and a
+        repository whose views span both classes pays off the most, so holdouts filled that
+        way were 75-80% mostly-AI repositories against 34% in training. Drawing each
+        stratum in proportion first keeps every partition the same mix; the quota loop then
+        only tops up what is still missing.
+        """
+        strata: dict[tuple[str, str], list[int]] = {}
+        for index, profile in enumerate(self.profiles):
+            strata.setdefault(profile.stratum, []).append(index)
+        for members in strata.values():
+            # Prompts, not components: holdouts are sized in prompts, and counting components
+            # let the quota top-up pull in the small, mostly-AI repositories to make up rows.
+            wanted = fraction * sum(self.profiles[index].prompt_count for index in members)
+            for index in members:
+                if wanted < self.profiles[index].prompt_count / 2:
+                    continue
+                if index not in self.assigned and self.can_assign(index, destination):
+                    self.assign(index, destination)
+                    wanted -= self.profiles[index].prompt_count
+
     def run(self) -> dict[int, str]:
         """Fill every holdout, leaving whatever is unassigned for training."""
-        for destination, _ in self.holdout_fractions:
+        for destination, fraction in self.holdout_fractions:
+            self.stratify(destination, fraction)
             while missing := self.progress[destination].deficits(self.quotas):
                 requirement = self.choose_requirement(missing, destination)
                 candidates = self.candidates_for(requirement, destination)

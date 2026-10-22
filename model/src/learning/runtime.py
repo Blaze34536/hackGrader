@@ -72,6 +72,12 @@ def load_dependencies() -> dict[str, Any]:
     }
 
 
+def device_placement() -> dict[str, Any]:
+    if not distributed.active():
+        return {}
+    return {"device_map": {"": distributed.local_rank()}}
+
+
 def prepare_model(dependencies: dict[str, Any], checkpoint_path: str | None = None):
     """Load the base checkpoint, align its chat template, and attach LoRA adapters."""
     fast_model = dependencies["FastLanguageModel"]
@@ -80,6 +86,7 @@ def prepare_model(dependencies: dict[str, Any], checkpoint_path: str | None = No
         max_seq_length=MAX_LEN,
         load_in_4bit=True,
         attn_implementation="sdpa",
+        **device_placement(),
     )
     if checkpoint_path:
         if not getattr(model, "peft_config", None):

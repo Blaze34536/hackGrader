@@ -56,6 +56,8 @@ out before the next budget; a single-pass run prints the pause and exits non-zer
 | `--labels-out` | none | Write the fail-closed label manifest here. |
 | `--human-repositories` | none | File of repository URLs to verify as the human class. |
 | `--human-before` | `2023-01-01` | Date every commit of a human-class repository must predate. |
+| `--human-search` | `0` | Human-class candidates to find by repository search (pushed before `--human-before`), verified like the list. |
+| `--band-goal` | off | Repositories wanted per AI band (10–40% and ≥50% attributed). The run stops once both bands hold N, and the manifest keeps at most this many per band, human included. Replaces `--max-repositories` as the goal. |
 | `--request-budget` | `5000` | Metered requests this run may spend. |
 | `--resume-to-goal` | off | Keep harvesting with a fresh budget until `--max-repositories` is reached. |
 | `--max-runs` | `4` | Harvest passes `--resume-to-goal` may spend. |

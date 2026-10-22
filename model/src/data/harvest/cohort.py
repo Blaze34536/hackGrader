@@ -30,6 +30,7 @@ from repositories.urls import parse_github_url
 
 from .agents import AGENT_APPS, AgentApp, agent_for_slug
 from .attribution import TOUCH_WINDOW, classify_touches, commit_sha, file_truth
+from .bands import AI_BANDS, band_of
 from .budget import BudgetExceeded
 from .client import API_ROOT, GithubClient, RateLimited
 from .queries import MergeCandidate, search_merged
@@ -358,6 +359,16 @@ def rank_candidates(
     return [candidate for _, candidate in scored]
 
 
+def band_counts(repositories: Iterable[RepositoryTruth]) -> dict[str, int]:
+    """Count recorded repositories by the band their measured share falls in."""
+    counts = {band: 0 for band in AI_BANDS}
+    for truth in repositories:
+        band = band_of(truth.attributed_fraction)
+        if band is not None:
+            counts[band] += 1
+    return counts
+
+
 def harvest(
     client: GithubClient,
     *,
@@ -371,18 +382,33 @@ def harvest(
     max_files: int = 40,
     max_bytes: int = MAX_FILE_BYTES,
     refresh: bool = False,
+    band_goal: int | None = None,
 ) -> HarvestSummary:
-    """Search for merged agent pull requests and harvest each repository once."""
+    """Search for merged agent pull requests and harvest each repository once.
+
+    With ``band_goal``, the run stops once every AI band holds that many repositories, and
+    ``max_repositories`` no longer applies. Every candidate is read until then: a share is
+    only known after its files are, and the label manifest caps each band afterwards.
+    """
     cohort = read_cohort(store.path)
     known = set() if refresh else cohort.urls()
     summary = HarvestSummary(repositories=len(cohort.repositories))
     prefetched: dict[str, Any] = {}
+    counts = band_counts(cohort.repositories)
+
+    def bands_full() -> bool:
+        """Return whether every AI band already holds the goal."""
+        return band_goal is not None and all(count >= band_goal for count in counts.values())
+
     print(
         f"[i] cohort {store.path}: {len(cohort.repositories)} repository(ies) and "
         f"{len(cohort.humans)} verified human repository(ies) already recorded"
     )
     for agent in agents:
-        if summary.repositories >= max_repositories or summary.stopped:
+        if summary.stopped or (band_goal is None and summary.repositories >= max_repositories):
+            break
+        if bands_full():
+            summary.stopped = f"band goal reached ({band_goal} per AI band)"
             break
         print(f"[i] searching {agent.name} ({agent.slug}) merged pull requests {since}..{until}")
         try:
@@ -419,12 +445,15 @@ def harvest(
             break
         seen: set[str] = set()
         for candidate in ranked:
-            if summary.repositories >= max_repositories:
+            if band_goal is None and summary.repositories >= max_repositories:
                 summary.stopped = f"repository goal reached ({max_repositories})"
                 break
             if candidate.repository in known or candidate.repository in seen:
                 continue
             seen.add(candidate.repository)
+            if bands_full():
+                summary.stopped = f"band goal reached ({band_goal} per AI band)"
+                break
             if client.budget.remaining < 3 + max_files:
                 summary.stopped = (
                     f"request ceiling reached ({client.budget.spent} of "
@@ -469,6 +498,8 @@ def harvest(
                         "file-level truth"
                     )
             fraction = truth.attributed_fraction
+            if band_of(fraction) is not None:
+                counts[band_of(fraction)] += 1
             shown = "n/a" if fraction is None else f"{fraction * 100:.1f}%"
             print(
                 f"[i] {truth.url}: {len(truth.files_with(AGENT_FILE))} agent file(s) / "
@@ -484,6 +515,7 @@ __all__ = [
     "LANGUAGE_EXTENSIONS",
     "MAX_FILE_BYTES",
     "HarvestSummary",
+    "band_counts",
     "candidate_files",
     "harvest",
     "harvest_repository",

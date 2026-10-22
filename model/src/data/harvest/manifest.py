@@ -30,6 +30,7 @@ from ..labels import (
     report_manifest,
     validate_entries,
 )
+from .bands import entry_band
 from .records import (
     AGENT_FILE,
     ATTRIBUTION_RULE,
@@ -164,8 +165,29 @@ def report(path: str, entries: list[dict[str, Any]]) -> LabelManifest:
 __all__ = [
     "AUDITOR",
     "ai_entry",
+    "balance_entries",
     "derive_entries",
     "human_entry",
     "report",
     "write_manifest",
 ]
+
+
+def balance_entries(
+    entries: list[dict[str, Any]], *, goal: int
+) -> tuple[list[dict[str, Any]], list[tuple[str, str]]]:
+    """Keep at most ``goal`` entries per band, in order, and drop AI entries outside every band."""
+    kept: list[dict[str, Any]] = []
+    dropped: list[tuple[str, str]] = []
+    counts: dict[str, int] = {}
+    for entry in entries:
+        band = entry_band(entry)
+        if band is None:
+            dropped.append((entry["url"], "attributed share falls outside every AI band"))
+            continue
+        if counts.get(band, 0) >= goal:
+            dropped.append((entry["url"], f"the {band} band already holds {goal}"))
+            continue
+        counts[band] = counts.get(band, 0) + 1
+        kept.append(entry)
+    return kept, dropped

@@ -3,6 +3,7 @@
 import time
 from typing import Any
 
+from .. import distributed
 from ..pipeline.models import load_continuation_adapter
 from .artifacts import RunDeadlineExceeded
 from .fit import train_model
@@ -60,5 +61,7 @@ def train_round(
         SystemExit,
         KeyboardInterrupt,
     ) as exc:
+        if distributed.active():
+            raise
         return None, exc
     return trainer, None
