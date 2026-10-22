@@ -30,6 +30,18 @@ def prepare_environment() -> None:
     os.environ["TORCH_COMPILE_DISABLE"] = "1"
 
 
+def model_load_options() -> dict[str, Any]:
+    """Place each DDP worker's quantized base model on its own GPU.
+
+    Unsloth defaults to ``device_map="sequential"``, which spreads the 4-bit model
+    across every visible GPU. Under DDP each worker must hold a complete replica on
+    its own device, or the workers build different parameter sets and DDP aborts.
+    """
+    if distributed.active():
+        return {"device_map": {"": distributed.local_rank()}}
+    return {}
+
+
 def disable_optional_time_limit() -> None:
     """Disable the optional Unsloth timeout wrapper when that hook exists."""
     try:
@@ -80,6 +92,7 @@ def prepare_model(dependencies: dict[str, Any], checkpoint_path: str | None = No
         max_seq_length=MAX_LEN,
         load_in_4bit=True,
         attn_implementation="sdpa",
+        **model_load_options(),
     )
     if checkpoint_path:
         if not getattr(model, "peft_config", None):

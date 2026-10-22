@@ -3,7 +3,7 @@
 from typing import Any
 
 from ..config import BASE_MODEL, MAX_LEN
-from ..runtime import prepare_model
+from ..runtime import model_load_options, prepare_model
 
 
 def load_round_model(dependencies: dict[str, Any], checkpoint_path: str | None):
@@ -16,6 +16,7 @@ def load_round_model(dependencies: dict[str, Any], checkpoint_path: str | None):
         max_seq_length=MAX_LEN,
         load_in_4bit=True,
         attn_implementation="sdpa",
+        **model_load_options(),
     )
     from ..inputs import configure_tokenizer
 
