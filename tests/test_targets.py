@@ -26,7 +26,7 @@ from data.labels import (
     provenance_target,
     validate_entries,
 )
-from data.rendering import batch_measurement
+from data.rendering import _finalize_core, core
 from learning import config as training_config
 from learning.config_validation import validate_config
 
@@ -262,28 +262,25 @@ class TestVerifiedTargetsAreMeasured(unittest.TestCase):
             round((low + high) / 2),
         )
 
-    def test_a_batch_takes_the_share_of_the_files_it_shows(self) -> None:
-        """Measure a batch over its own files, so one repository gives several targets."""
+    def test_every_view_of_a_repository_targets_its_whole_share(self) -> None:
+        """Teach the repository share even for a view that shows only human-written files."""
         entry = {
             "label": LABEL_AI,
             "attributed_lines": 30,
             "examined_lines": 130,
             "files": [
                 {"path": "a.py", "ai_lines": 30, "examined_lines": 30},
-                {"path": "b.py", "ai_lines": 0, "examined_lines": 100},
+                {"path": "src/service.py", "ai_lines": 0, "examined_lines": 100},
             ],
         }
-        agent_batch = "--- FILE: a.py ---\nprint(1)\n"
-        human_batch = "--- FILE: b.py ---\nprint(2)\n"
+        item = core(DOCUMENTED_PROBE, "https://github.com/acme/tool", verified_label=LABEL_AI,
+                    verified_entry=entry, kind="repository", source_type="real_repository")
 
-        self.assertEqual(
-            batch_measurement(entry, agent_batch),
-            {"attributed_lines": 30, "examined_lines": 30},
-        )
-        self.assertEqual(provenance_target(LABEL_AI, detector.analyze(agent_batch), batch_measurement(entry, agent_batch)), 100)
-        self.assertIsNone(
-            provenance_target(LABEL_AI, detector.analyze(human_batch), batch_measurement(entry, human_batch))
-        )
+        rows = _finalize_core(item, {}, budget=None)
+
+        self.assertTrue(rows)
+        self.assertEqual({report.parse_report(row["messages"][-1]["content"])["ai_score"]
+                          for row in rows}, {23})
 
     def test_a_line_that_is_only_a_path_is_never_quoted(self) -> None:
         """Quote the next code line rather than a path, which the citation check reads as a file."""
@@ -293,22 +290,6 @@ class TestVerifiedTargetsAreMeasured(unittest.TestCase):
 
         self.assertIsNotNone(quote)
         self.assertNotIn("TODO_list", quote[0])
-
-    def test_a_batch_with_no_counted_file_keeps_the_repository_share(self) -> None:
-        """Fall back to the repository share when a batch shows nothing the manifest counted."""
-        entry = {
-            "label": LABEL_AI,
-            "attributed_lines": 30,
-            "examined_lines": 100,
-            "files": [{"path": "a.py", "ai_lines": 30, "examined_lines": 30}],
-        }
-        unlisted = "--- FILE: other.py ---\nprint(3)\n"
-
-        self.assertIsNone(batch_measurement(entry, unlisted))
-        self.assertEqual(
-            provenance_target(LABEL_AI, detector.analyze(unlisted), batch_measurement(entry, unlisted) or entry),
-            30,
-        )
 
     def test_a_measurement_survives_the_manifest_validator(self) -> None:
         """Carry the counts through the fail-closed standard rather than around it."""

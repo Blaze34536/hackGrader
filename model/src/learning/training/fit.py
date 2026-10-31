@@ -174,7 +174,9 @@ def train_model(
         raise SystemExit(
             "[!] The trainer completed no optimizer steps; deployment stopped."
         )
-    if not trainer.state.best_model_checkpoint:
+    # Only the saving worker records it: the others check for the checkpoint folder before
+    # that worker has written it. Selection runs on the saving worker alone.
+    if distributed.is_main() and not trainer.state.best_model_checkpoint:
         raise SystemExit(
             "[!] No best validation checkpoint was selected; deployment stopped."
         )

@@ -13,11 +13,10 @@ def eval_configuration_fields(config_type: Any) -> set[str]:
 def configure_evaluation(
     config_type: Any, eval_dataset: Any, eval_steps: int
 ) -> dict[str, Any]:
-    """Fail closed unless training can evaluate and restore its best checkpoint."""
+    """Fail closed unless training can evaluate and record its best checkpoint."""
     required = {
         "eval_strategy",
         "eval_steps",
-        "load_best_model_at_end",
         "metric_for_best_model",
         "save_steps",
     }
@@ -39,7 +38,9 @@ def configure_evaluation(
         "eval_steps": eval_steps,
         "save_steps": eval_steps,
         "save_only_model": True,
-        "load_best_model_at_end": True,
+        # Selection reloads the recorded best from disk; the Trainer's own reload misses
+        # continuation adapters, which PEFT saves in a subfolder named after the adapter.
+        "load_best_model_at_end": False,
         "metric_for_best_model": "eval_loss",
         "greater_is_better": False,
     }

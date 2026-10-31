@@ -40,7 +40,7 @@ Repositories take minutes rather than seconds, so a gallery of a few dozen proje
 | --- | --- |
 | Show options | `uv run hackgrader -h` |
 | Grade a gallery | `uv run hackgrader <gallery-url>` |
-| Build a PDF | `uv run hackgrader-pdf [scores.json] [report.pdf]` |
+| Build a PDF | `uv run hackgrader-pdf [scores.json] [reports/]` |
 | Offline tests | `uv run pytest` |
 | Live tests | `uv run pytest -m live -s` |
 

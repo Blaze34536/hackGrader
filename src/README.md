@@ -24,7 +24,7 @@ Run from the repository root:
 uv run hackgrader -h
 uv run hackgrader https://example.devpost.com
 uv run hackgrader-pdf -h
-uv run hackgrader-pdf scores.json report.pdf
+uv run hackgrader-pdf scores.json reports
 ```
 
 A gallery run needs network access, Chrome, GitHub access, and an Ollama server with the selected model available. Configure `HACKGRADER_MODEL` for the Ollama model tag and `OLLAMA_HOST` for a non-default server; an optional `GITHUB_TOKEN` provides higher GitHub API limits. Gallery results are written to root `scores.json`. PDF generation reads that file by default and does not call the crawler, GitHub, or Ollama.

@@ -14,6 +14,7 @@ from crawling.crawler import Crawler
 from crawling.driver import Driver
 from grading.reporting import Reporting
 from grading.runtime import BASE_QUESTION, Model
+from pdf.cli import REPORTS_DIR, write_team_report
 from repositories.urls import repo_slug
 
 
@@ -23,7 +24,7 @@ def individual_query(url: str, grader: Model) -> dict[str, Any]:
 
 
 def run_gallery(url: str) -> dict[str, dict[str, Any]]:
-    """Crawl one gallery, preflight the grader, and save each completed evaluation."""
+    """Crawl one gallery, grade each repository, and write its PDF before the next."""
     reporter = Reporting()
     driver = Driver()
     try:
@@ -58,6 +59,9 @@ def run_gallery(url: str) -> dict[str, dict[str, Any]]:
             }
         with open(reporter.json_path, "w", encoding="utf-8") as file:
             json.dump(scores, file, ensure_ascii=False, indent=4)
+        report = write_team_report(slug, scores[slug], REPORTS_DIR, reporter.json_path)
+        if report is not None:
+            print(f"report: {report}\n")
 
     reporter.generate_report()
     return scores

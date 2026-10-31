@@ -9,7 +9,7 @@ from typing import Any
 
 import contracts as report
 import detection as detector
-from contracts.prompts import FILE_NAME_HEADER, MODEL_DUMP_CHARS
+from contracts.prompts import MODEL_DUMP_CHARS
 
 from .config import FLAG_THRESHOLD
 from .validation import DEFAULT_MAX_LEN
@@ -58,28 +58,6 @@ def _token_count(tokenizer: Any, messages: list[dict[str, str]]) -> int:
     return len(tokenizer(rendered, add_special_tokens=False)["input_ids"])
 
 
-def batch_measurement(entry: dict[str, Any] | None, batch: str) -> dict[str, int] | None:
-    """Return the attributed and examined line counts of the files one batch actually shows.
-
-    A repository's share is taken over every file it examined, but a view shows only some of
-    them. Taking the share over the shown files makes each batch's target rest on its own code,
-    so one repository gives many targets rather than one. ``None`` means the manifest records no
-    per-file counts for these files, and the caller keeps the repository share.
-    """
-    files = entry.get("files") if entry else None
-    if not files:
-        return None
-    shown = {name.strip() for name in FILE_NAME_HEADER.findall(batch)}
-    attributed = examined = 0
-    for item in files:
-        if item["path"] in shown:
-            attributed += int(item["ai_lines"])
-            examined += int(item["examined_lines"])
-    if examined <= 0:
-        return None
-    return {"attributed_lines": attributed, "examined_lines": examined}
-
-
 def _finalize_core(
     item: dict[str, Any],
     weights: dict[str, dict[str, float]],
@@ -104,9 +82,9 @@ def _finalize_core(
         verified = item.get("verified_label")
         if verified is not None:
             entry = item.get("verified_entry")
-            target = provenance_target(
-                verified, analysis, batch_measurement(entry, batch) or entry
-            )
+            # The repository share, not the shown files' share: which files an agent last
+            # touched is not readable from a view, while the project's overall share is.
+            target = provenance_target(verified, analysis, entry)
             if target is None:
                 if unsupported is not None:
                     key = str(item["source_type"])

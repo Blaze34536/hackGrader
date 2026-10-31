@@ -470,12 +470,12 @@ class TestJudgeOnlyRendering(unittest.TestCase):
         """Draw stored scores while excluding legacy flags and findings from the page."""
         with TemporaryDirectory() as directory:
             path = self._write(directory, self._stale())
-            out = Path(directory) / "report.pdf"
+            out = Path(directory) / "reports"
             before = path.read_bytes()
 
             self.assertEqual(cli.main([str(path), str(out)]), 0)
 
-            text = "\n".join(_page_texts(_pages(out)))
+            text = "\n".join(_page_texts(_pages(out / "student-stale.pdf")))
             self.assertIn("74%", text)
             self.assertIn("68%", text)
             self.assertNotIn("\n2%\n", text)

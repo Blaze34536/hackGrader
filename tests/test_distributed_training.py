@@ -104,6 +104,49 @@ class TestTrainerConfiguration(unittest.TestCase):
     def test_single_gpu_leaves_the_setting_alone(self) -> None:
         self.assertNotIn("ddp_find_unused_parameters", self._settings({"WORLD_SIZE": "1"}))
 
+    def test_best_checkpoint_is_recorded_not_reloaded(self) -> None:
+        """A continuation adapter saves under its own name, where the reload cannot find it."""
+        settings = self._settings({"WORLD_SIZE": "1"})
+        self.assertIs(settings["load_best_model_at_end"], False)
+        self.assertEqual(settings["metric_for_best_model"], "eval_loss")
+
+
+class _Trainer:
+    """Finish training without recording a best checkpoint, as a non-saving worker does."""
+
+    def __init__(self, **_kwargs) -> None:
+        self.model = mock.MagicMock()
+        self.state = mock.Mock(global_step=50, best_model_checkpoint=None)
+
+    def train(self) -> None:
+        """Do nothing."""
+
+
+class TestBestCheckpointCheck(unittest.TestCase):
+    """Only the saving worker can see the checkpoint the trainer records as best."""
+
+    def _train(self, environment: dict):
+        dependencies = {"torch": mock.MagicMock(), "SFTConfig": _Config, "SFTTrainer": _Trainer}
+        with mock.patch.dict(os.environ, environment), \
+                mock.patch.object(fit.distributed, "prepare_round_directory"), \
+                mock.patch.object(fit, "configure_quantized_model_placement", return_value=False), \
+                mock.patch.object(fit, "build_collator"), \
+                mock.patch.object(fit, "_callbacks"), \
+                mock.patch.object(fit, "prepare_training_checkpointing"), \
+                mock.patch("builtins.print"):
+            return fit.train_model(
+                [1], [1], None, None, dependencies, training_rows=[], max_steps=fit.EVAL_STEPS,
+                round_output_dir="outputs/run/round-01", deadline=float("inf"),
+            )
+
+    def test_a_non_saving_worker_does_not_need_a_best_checkpoint(self) -> None:
+        self.assertIsInstance(self._train(DDP_WORKER_1), _Trainer)
+
+    def test_the_saving_worker_still_requires_one(self) -> None:
+        with mock.patch("learning.training.artifacts.report_training_rate"), \
+                self.assertRaises(SystemExit):
+            self._train(DDP_WORKER_0)
+
 
 class TestRoundFailure(unittest.TestCase):
 

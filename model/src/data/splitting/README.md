@@ -12,7 +12,7 @@ The public entry points are `split_by_source()` for training plus validation, an
 
 The fresh-repository builder option adds test-only minimums for distinct real-repository prompts and both score classes. The `--fresh-repository-test` builder flag requests 50 distinct real test prompts and 10 prompts in each class by default. These are allocation requirements, not bypasses for any other configured gate. Grouping and allocation details are in [`components.py`](components.py), [`quotas.py`](quotas.py), [`capacity.py`](capacity.py), and [`allocator.py`](allocator.py).
 
-The allocator fills holdouts while checking that enough unassigned source components and examples remain for every outstanding requirement. If total source-disjoint supply is inadequate, it reports the unmet category and stops. It never weakens quotas or splits a source component to force a pass. The final audit independently recounts class, score-band, lineage, repository, and target-share requirements.
+Each holdout is first filled with equal thirds of human (mean target under 10), partly-AI (10–39), and mostly-AI (40+) prompts, drawn across source families in proportion and never more than a third of any one stratum; the quota loop then tops up whatever is still missing. The allocator fills holdouts while checking that enough unassigned source components and examples remain for every outstanding requirement. If total source-disjoint supply is inadequate, it reports the unmet category and stops. It never weakens quotas or splits a source component to force a pass. The final audit independently recounts class, score-band, lineage, repository, and target-share requirements.
 
 ## Module map
 

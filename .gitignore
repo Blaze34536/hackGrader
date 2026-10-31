@@ -85,6 +85,7 @@ htmlcov/
 dataset.jsonl
 dataset.val.jsonl
 report.pdf
+reports/
 
 # Generated model artifacts (merged weights, GGUF files)
 model/models/

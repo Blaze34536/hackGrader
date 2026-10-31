@@ -9,10 +9,10 @@ Run from the repository root:
 ```bash
 uv run hackgrader-pdf -h
 uv run hackgrader-pdf
-uv run hackgrader-pdf scores.json report.pdf
+uv run hackgrader-pdf scores.json reports
 ```
 
-The optional positional arguments are `input` and `output`. Defaults are root `scores.json` and root `report.pdf`. The input must be valid JSON containing project results; missing input or PDF-generation errors return a non-zero status. The command reports layout issues and page/project count differences when detected; a report holds one cover page plus at least one page per project.
+The optional positional arguments are `input` and `output`. Defaults are root `scores.json` and the root `reports/` folder. The command writes one PDF per team, named after its GitHub owner/repo (`acme/app` becomes `reports/acme-app.pdf`), each with its own cover page. The gallery pipeline writes the same file for each team as soon as that team is graded, so reports appear while the rest are still running. The input must be valid JSON containing project results; missing input or PDF-generation errors return a non-zero status.
 
 ## Page contents
 

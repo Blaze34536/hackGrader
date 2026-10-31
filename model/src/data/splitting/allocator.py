@@ -12,12 +12,16 @@ License: MIT
 
 from __future__ import annotations
 
+from ..validation import MAX_TARGET_SHARE
 from .bands import _CLASS_LABELS, _SCORE_BANDS, _SCORE_CLASSES
 from .capacity import CapacityReport, category_index
 from .components import ComponentProfile
 from .priority import component_priority
 from .progress import PartitionProgress, Requirement
 from .quotas import PartitionQuotas
+
+# Holdout groups by a stratum's mean-target band: equal thirds of each.
+_GROUPS = {"0-9": "human", "10-39": "partly-ai", "40-59": "mostly-ai", "60-100": "mostly-ai"}
 
 
 class ComponentAllocator:
@@ -250,21 +254,42 @@ class ComponentAllocator:
         return order[-1]
 
     def stratify(self, destination: str, fraction: float) -> None:
-        """Give one holdout its proportional share of every stratum before any quota.
+        """Fill one holdout with near-equal thirds of human, partly-AI, and mostly-AI prompts.
 
         The quota loop alone picks the component that pays off the most deficits, and a
         repository whose views span both classes pays off the most, so holdouts filled that
-        way were 75-80% mostly-AI repositories against 34% in training. Drawing each
-        stratum in proportion first keeps every partition the same mix; the quota loop then
-        only tops up what is still missing.
+        way were 75-80% mostly-AI repositories against 34% in training. Each group's third is
+        drawn across its strata in proportion, so every source family appears; the quota loop
+        then only tops up what is still missing.
         """
         strata: dict[tuple[str, str], list[int]] = {}
         for index, profile in enumerate(self.profiles):
             strata.setdefault(profile.stratum, []).append(index)
-        for members in strata.values():
-            # Prompts, not components: holdouts are sized in prompts, and counting components
-            # let the quota top-up pull in the small, mostly-AI repositories to make up rows.
-            wanted = fraction * sum(self.profiles[index].prompt_count for index in members)
+        prompts = {
+            key: sum(self.profiles[index].prompt_count for index in members)
+            for key, members in strata.items()
+        }
+        groups: dict[str, int] = {}
+        for key, count in prompts.items():
+            groups[_GROUPS[key[1]]] = groups.get(_GROUPS[key[1]], 0) + count
+        size = fraction * sum(prompts.values())
+        # Human rows mostly target 0%, so their third shrinks until its 0% rows fit under the
+        # one-score cap the audit enforces, with room for top-ups; the others split the rest.
+        zeros = sum(
+            score == 0
+            for key, members in strata.items()
+            if _GROUPS[key[1]] == "human"
+            for index in members
+            for score in self.profiles[index].prompts.values()
+        )
+        human = size / len(groups) if "human" in groups else 0
+        if zeros:
+            human = min(human, 0.9 * MAX_TARGET_SHARE * size * groups["human"] / zeros)
+        rest = (size - human) / max(1, len(groups) - ("human" in groups))
+        for key, members in strata.items():
+            share = human if _GROUPS[key[1]] == "human" else rest
+            # A third of each stratum at most, so a scarce group never empties training.
+            wanted = min(share * prompts[key] / groups[_GROUPS[key[1]]], prompts[key] / 3)
             for index in members:
                 if wanted < self.profiles[index].prompt_count / 2:
                     continue

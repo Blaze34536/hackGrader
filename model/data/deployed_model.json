@@ -1,7 +1,6 @@
 {
-  "tag": "hackgrader:ee0eefc736e9f5b4",
-  "adapter_sha256": "ee0eefc736e9f5b4269535b1d2ca70cadbf59483a924fb9f64d5d349d7337ff1",
-  "gguf": "models/ai_detector_q8-20261014-022113-ee0eefc736e9f5b4.gguf",
-  "deployed_at": "2026-10-14T16:49:26",
-  "version": 3
+  "tag": "hackgrader-ungated:42a048c8a6f9306f",
+  "adapter_sha256": "42a048c8a6f9306fde86b2a9cefd5eb16014efb673fd3db97e5ddb0954cb7cd0",
+  "gguf": "models/ai_detector_q8-20261022-175645-42a048c8a6f9306f.gguf",
+  "deployed_at": "2026-10-25T12:24:25"
 }
