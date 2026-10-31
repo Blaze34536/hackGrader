@@ -101,4 +101,4 @@ model/reports/*.jsonl
 
 # misc.
 scores.json
-.*
+.*reports/
